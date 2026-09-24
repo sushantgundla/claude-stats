@@ -1672,19 +1672,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   for (p = 1; p <= nper; p++) v[p] = (SA_n[p] > 0) ? commas(SA_n[p]) " calls · avg " ctxfmt(SA_sum[p] / SA_n[p]) " · p95 " ctxfmt(hist_pct(SA_h, p, CTX_MAXBIN, SA_n[p], 0.95, CTX_BIN)) : "–"; hrow("Subagent calls", v, "")
   o("</tbody></table></div>")
 
-  # 1. How big is the context on each call: share of calls in each 25k band, 0 to 1M
-  for (p = 1; p <= nper; p++) {
-    LOK[p] = (CT_n[p] > 0)
-    for (i = 1; i <= 40; i++) {
-      tot = 0
-      for (b = (i - 1) * 5; b < i * 5; b++) tot += CT_h[p, b]
-      LY[p, i] = (CT_n[p] > 0) ? tot / CT_n[p] * 100 : 0
-    }
-  }
-  for (i = 1; i <= 40; i++) LXL[i] = kfmt((i - 1) * 25000)
-  line_chart("How big is the context on a typical call?", "Each point is the <b>% of API calls</b> whose context falls in that 25k-token band (the point at 200k covers 200k to 225k). A peak on the left means most calls run on a small conversation; a peak on the right means most calls carry a large one, which costs more per call.", "Context size of the call (tokens)", "% of calls", 40, 4)
-
-  # 2. How many calls are over a given size: share of calls at or above each size
+  # 1. How many calls are over a given size: share of calls at or above each size
   for (p = 1; p <= nper; p++) {
     LOK[p] = (CT_n[p] > 0)
     run = 0
@@ -1696,7 +1684,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
   line_chart("How many calls go over a given size?", "For any size on the bottom axis, the line shows the <b>% of API calls with more context than that</b>. Read up from 200k to see what share of calls carry more than 200k tokens. The line always starts at 100% and falls as the size grows; the further right it stays high, the more of your calls carry big conversations.", "Context size (tokens)", "% of calls above this size", 41, 4)
 
-  # 3. Peak context per session: share of sessions whose peak reached at least each size.
+  # 2. Peak context per session: share of sessions whose peak reached at least each size.
   # Cumulative, so it stays a smooth falling line even when a week has only a few sessions.
   for (p = 1; p <= nper; p++) {
     LOK[p] = (SS_n[p] > 0)
@@ -1709,19 +1697,20 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
   line_chart("How large does a session's context get?", "Each session has one <b>peak context</b>: the biggest conversation it reached. For any size on the bottom axis, the line shows the <b>% of sessions that reached at least that size</b>. It starts at 100% and only falls; a line that stays high out to 1M means many sessions grow until they hit the context limit.", "Context size (tokens)", "% of sessions that reached it", 41, 4)
 
-  # 4. Session length: share of sessions by number of API calls, 50-call bands
+  # 3. Session length: share of sessions with more than N API calls (cumulative, like the two above)
   for (p = 1; p <= nper; p++) {
     LOK[p] = (SS_n[p] > 0)
-    for (i = 1; i <= 20; i++) {
-      tot = 0
-      for (b = (i - 1) * 50 + 1; b <= ((i == 20) ? CALL_CAP : i * 50); b++) tot += SS_calls_h[p, b]   # the last band takes everything beyond 950
-      LY[p, i] = (SS_n[p] > 0) ? tot / SS_n[p] * 100 : 0
+    run = 0
+    for (b = CALL_CAP; b >= 1; b--) {
+      run += SS_calls_h[p, b]
+      if (b % 50 == 1 && b <= 1001) LY[p, (b - 1) / 50 + 1] = (SS_n[p] > 0) ? run / SS_n[p] * 100 : 0   # sessions with more than b-1 calls
     }
+    LY[p, 1] = (SS_n[p] > 0) ? 100 : 0
   }
-  for (i = 1; i <= 20; i++) LXL[i] = (i == 20) ? "951+" : ((i - 1) * 50 + 1)
-  line_chart("How long are your sessions?", "Each point is the <b>% of sessions</b> with that many API calls (50-call bands; the last band is 951 and up). Short sessions stay cheap. Long sessions keep growing their context, so every later call costs more.", "API calls in the session", "% of sessions", 20, 2)
+  for (i = 1; i <= 21; i++) LXL[i] = (i - 1) * 50
+  line_chart("How long are your sessions?", "For any number of API calls on the bottom axis, the line shows the <b>% of sessions that ran longer than that</b>. It starts at 100% and only falls. Short sessions stay cheap; long ones keep growing their context, so every later call costs more.", "API calls in the session", "% of sessions longer than this", 21, 2)
 
-  # 5. Context by call number in the session
+  # 4. Context by call number in the session
   if (ix_max >= 2) {
     W = 1100; H = 340; L = 70; R = 24; T = 16; B = 44
     pw = W - L - R; ph = H - T - B
@@ -1768,10 +1757,10 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
     o("</svg></div>")
   }
 
-  # 6. Share of calls by context size band
+  # 5. Share of calls by context size band
   split("Under 50k|50k to 100k|100k to 200k|200k to 500k|Over 500k", kname, "|")
   split("var(--k3)|var(--k1)|var(--k2)|var(--p2)|var(--p4)", kcol, "|")
-  o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, grouped into five size bands. Each bar is 100% of that period's API calls; the wider the orange and pink parts, the more calls ran on 200k+ tokens of context.</p><div class='keys'>")
+  o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, grouped into five size bands (a summary of where the line crosses 50k, 100k, 200k and 500k). Each bar is 100% of that period's API calls; the wider the orange and pink parts, the more calls ran on 200k+ tokens of context.</p><div class='keys'>")
   for (j = 1; j <= 5; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kname[j] "</span>")
   o("</div>")
   split("0 10 20 40 100 100000", bins, " ")   # bin edges in units of CTX_BIN: 0, 50k, 100k, 200k, 500k, end
