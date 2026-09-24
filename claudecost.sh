@@ -458,6 +458,27 @@ function emit_u(k, p, d, m, a, b, c, e, h, ep, sid, sd, cwd) {
   if (h > eu_h[k]) eu_h[k] = h
 }
 
+# First word of a shell command, as a name: skips VAR=value prefixes and a leading "cd dir" line or "cd dir &&"
+function bash_word(c,    n, t, i, w) {
+  gsub(/\\n/, " ; ", c); gsub(/\\t/, " ", c); gsub(/&&|;/, " ; ", c)
+  n = split(c, t, /[ \t]+/)
+  i = 1
+  while (i <= n) {
+    if (t[i] == "" || t[i] == ";" || t[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+    if (t[i] == "cd") { for (i++; i <= n && t[i] != ";"; i++) ; continue }
+    break
+  }
+  if (i > n) return ""
+  w = t[i]; sub(/^.*\//, "", w); gsub(/[^A-Za-z0-9_.+-]/, "", w)
+  return w
+}
+
+# "dir/file" from a full path
+function short_path(f,    n, a) {
+  n = split(f, a, "/")
+  return (n >= 2) ? a[n - 1] "/" a[n] : f
+}
+
 function emit_t(k, p, cat, name, ep) {
   if (p > 0 && (cat == "tool" || cat == "mcp")) r_t++
   if (!(k in et_ep) || ep < et_ep[k]) { et_ep[k] = ep; et_p[k] = p; et_c[k] = cat; et_n[k] = name }
@@ -721,6 +742,10 @@ BEGIN {
     t_id[nt] = extract_str(fr, "id"); t_name[nt] = extract_str(fr, "name"); t_arg[nt] = ""
   } else if (substr(fr, 1, 9) == "\"skill\":\"") {
     if (nt > 0 && t_name[nt] == "Skill" && t_arg[nt] == "") t_arg[nt] = extract_str(fr, "skill")
+  } else if (substr(fr, 1, 11) == "\"command\":\"") {
+    if (nt > 0 && t_name[nt] == "Bash" && t_arg[nt] == "") t_arg[nt] = substr(fr, 12)
+  } else if (substr(fr, 1, 13) == "\"file_path\":\"") {
+    if (nt > 0 && t_name[nt] == "Read" && t_arg[nt] == "") t_arg[nt] = substr(fr, 14)
   } else if (substr(fr, 1, 17) == "\"subagent_type\":\"") {
     if (nt > 0 && (t_name[nt] == "Agent" || t_name[nt] == "Task") && t_arg[nt] == "") t_arg[nt] = extract_str(fr, "subagent_type")
   } else if (fr == "\"usage\":{") {
@@ -745,7 +770,7 @@ BEGIN {
 }
 END { flush(); flush_emits() }
 
-function flush(    ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
+function flush(    w, ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
   if (cur != "" && length(f_ts) >= 19) {
     ep = ts_epoch(f_ts)
     p = period_of(ep)   # 0 outside the range; kept for earliest-copy dedup
@@ -766,6 +791,8 @@ function flush(    ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
             emit_t(t_id[i], p, "tool", t_name[i], ep)
           }
           if (t_name[i] == "Skill" && t_arg[i] != "") emit_t(t_id[i] ":s", p, "skill", t_arg[i], ep)
+          if (t_name[i] == "Bash" && (w = bash_word(t_arg[i])) != "") emit_t(t_id[i] ":b", p, "bash", w, ep)
+          if (t_name[i] == "Read" && t_arg[i] != "") emit_t(t_id[i] ":f", p, "file", short_path(t_arg[i]), ep)
           if (t_name[i] == "Agent" || t_name[i] == "Task")
             emit_t(t_id[i] ":a", p, "agent", (t_arg[i] == "") ? "general-purpose" : t_arg[i], ep)
         }
@@ -795,7 +822,7 @@ FRAG_PROG="${COMMON_AWK}${FRAG_PROG_MAIN}"
 PERL_PROG='next unless index($_, q{"usage"}) >= 0 || index($_, q{"content":"<command-}) >= 0 || index($_, q{"role":"user","content":"/}) >= 0;
 next if index($_, q{"type":"tool_result"}) >= 0;
 $side = index($_, q{"isSidechain":true}) >= 0;
-while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"sessionId":"[^"]*"|"cwd":"[^"]*"|"isSidechain":(?:true|false)|"content":"<command-[^"]*|"role":"user","content":"\/[A-Za-z][\w:-]*(?=[ ,"\\]))/g) { $f = $1; if ($f =~ /^"role"/) { next if $side; $f =~ s{^.*"content":"}{"content":"<command-name>}; } print "$.\t$f\n" }'
+while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"command":"(?:[^"\\]|\\.)*|"file_path":"[^"]*|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"sessionId":"[^"]*"|"cwd":"[^"]*"|"isSidechain":(?:true|false)|"content":"<command-[^"]*|"role":"user","content":"\/[A-Za-z][\w:-]*(?=[ ,"\\]))/g) { $f = $1; if ($f =~ /^"role"/) { next if $side; $f =~ s{^.*"content":"}{"content":"<command-name>}; } print "$.\t$f\n" }'
 
 # Fallback reader (awk only): runs in parallel over batches of files and prints compact records
 IFS= read -r -d '' MAP_PROG_MAIN <<'AWK' || true
@@ -858,6 +885,8 @@ BEGIN {
     } else {
       emit_t(tid, p, "tool", tname, ep)
     }
+    if (tname == "Bash" && index(tinput, "\"command\":\"") > 0 && (bw = bash_word(substr(tinput, index(tinput, "\"command\":\"") + 11, 1000))) != "") emit_t(tid ":b", p, "bash", bw, ep)
+    if (tname == "Read" && (fpath = extract_str(tinput, "file_path")) != "") emit_t(tid ":f", p, "file", short_path(fpath), ep)
     if (tname == "Skill") {
       sname = extract_str(tinput, "skill")
       if (sname != "") emit_t(tid ":s", p, "skill", sname, ep)
@@ -954,9 +983,11 @@ BEGIN {
   cat_title["cmd"]   = "Slash commands"; cat_icon["cmd"]   = "⌨️ "
   cat_title["agent"] = "Subagents";      cat_icon["agent"] = "🤖"
   # the HTML report also lists individual MCP tools and projects (the terminal keeps the first five)
-  nhcat = split("tool mcp mcptool skill cmd agent project", hcats, " ")
+  nhcat = split("tool mcp mcptool bash file skill cmd agent project", hcats, " ")
   cat_title["mcptool"]  = "MCP tools";           cat_icon["mcptool"]  = "🔧"
   cat_title["project"]  = "Projects (API calls)"; cat_icon["project"] = "📁"
+  cat_title["bash"]     = "Bash commands";       cat_icon["bash"]     = "⌨️ "
+  cat_title["file"]     = "Files read";          cat_icon["file"]     = "📄"
 }
 
 # ---- Merge the records written by the parallel readers ----
@@ -1101,6 +1132,8 @@ END {
     bump("project", p, (dk_cwd[dk] != "") ? dk_cwd[dk] : "(unknown)")
     lep = dk_ep[dk] + tz_off * 60
     hh = int((lep % 86400) / 3600); wd = (int(lep / 86400) + 3) % 7   # 1970-01-01 was a Thursday; Monday = 0
+    proj = (dk_cwd[dk] != "") ? dk_cwd[dk] : "(unknown)"
+    PJ_c[p, proj] += line_cost; PJ_n[p, proj]++; PJ_t[proj] += line_cost
     TH_n[p, hh]++; TH_c[p, hh] += line_cost; TW_n[p, wd]++; TW_c[p, wd] += line_cost
     B_cr[bk] += cache_read
     B_in[bk] += input_tok + cache_create + cache_read
@@ -1383,7 +1416,7 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   o(".top{list-style:none;margin:0;padding:0}.top li{padding:8px 0;border-bottom:1px solid var(--line)}.top li:last-child{border-bottom:0}")
   o(".top .name{display:flex;justify-content:space-between;gap:10px;font-size:14px}.top .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".top .name b{font-variant-numeric:tabular-nums}.bars{margin-top:5px;display:grid;gap:3px}")
-  o(".bar{display:grid;grid-template-columns:1fr 52px;gap:8px;align-items:center;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}")
+  o(".bar{display:grid;grid-template-columns:1fr 72px;gap:8px;align-items:center;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}")
   o(".bar i{display:block;height:6px;border-radius:3px}.bar em{font-style:normal;text-align:right}")
   o(".keys{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-bottom:12px}")
   o(".note{color:var(--muted);font-size:14px}.note li{margin:6px 0}")
@@ -1394,7 +1427,7 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   o("td small{display:block;color:var(--muted);font-size:12px;font-weight:400}td b{font-weight:650}")
   o(".tv{position:absolute;opacity:0;pointer-events:none}.tvl{display:inline-block;padding:7px 16px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;font-size:14px;user-select:none}")
   o(".tvl.lm{border-radius:0;margin-left:-1px}.tvl.l1{border-radius:10px 0 0 10px}.tvl.l2{border-radius:0 10px 10px 0;margin-left:-1px}.tv:checked+.tvl{background:var(--ink);color:var(--bg);border-color:var(--ink)}.tv:focus-visible+.tvl{outline:2px solid var(--p1);outline-offset:2px}")
-  o(".views{margin-top:16px}.views .by-item,.views .by-period,.views .by-time{display:none}#tv1:checked~.views .by-item{display:grid}#tv2:checked~.views .by-period{display:block}#tv3:checked~.views .by-time{display:block}")
+  o(".views{margin-top:16px}.views .by-item,.views .by-period{display:none}#tv1:checked~.views .by-item{display:grid}#tv2:checked~.views .by-period{display:block}")
   o(".pcard{margin-bottom:16px}.pgrid{display:grid;gap:18px 24px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:12px}")
   o(".pgrid h3{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}")
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
@@ -1477,7 +1510,7 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   write_cache()
   write_context()
   write_models()
-  write_chart()
+  write_activity()
   write_top()
 
   # --- Notes ---
@@ -1572,7 +1605,7 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
   pw = W - L - R; ph = H - T - B
   slot = pw / nb; bw = slot * 0.7
   if (bw < 1) bw = 1
-  o("<section><details open><summary>Cost per " unit_word(bucket_unit) "</summary><p class='note cd'>The bars show what each " unit_word(bucket_unit) " cost (left scale). The line shows how many API calls were made (right scale). Cost usually goes up and down with the number of calls.</p><div class='card'><div class='keys'>")
+  o("<h3 class='ch'>Cost and requests per " unit_word(bucket_unit) "</h3><p class='note cd'>The bars show what each " unit_word(bucket_unit) " cost (left scale). The line shows how many API calls (requests) you made (right scale). Cost usually goes up and down with the number of requests.</p><div class='keys'>")
   if (nper > 1) for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
   else o("<span><i class='chip' style='background:" pcolor(1) "'></i>Cost (left axis)</span>")
   o("<span><i class='lk'></i>API calls (right axis)</span></div><div class='chartwrap'>")
@@ -1621,7 +1654,7 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
     for (i = 1; i <= nb; i += step)
       o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" hesc(bucket_tick(bk[i], bucket_unit)) "</text>")
   }
-  o("</svg></div></div></details></section>")
+  o("</svg></div>")
 }
 
 # --- Context size ---
@@ -1962,10 +1995,9 @@ function period_list(cat, p, keys, vals,    k, kp, n) {
 
 # --- Top lists: by item (bars per period) or by period (lists per period) ---
 function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
-  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, individual MCP tools, skills, slash commands, helper agents (subagents) and projects you used most. Each number is how many times it was used (for projects, how many API calls), with its share of that list. \"By item\" ranks them, " ((nper > 1) ? "\"By " ((compare_unit != "") ? compare_unit : "period") "\" lists the top items in each period, and " : "") "\"By time of use\" shows when you work. The small note next to a name shows how use changed in the last finished period compared with the one before it (new, or up or down by more than 10%). A period still in progress is left out of that comparison.</p>")
+  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, individual MCP tools, Bash commands (the first word of each), files read, skills, slash commands, helper agents (subagents) and projects you used most. Each number is how many times it was used (for projects, how many API calls), with its share of that list. \"By item\" ranks them. " ((nper > 1) ? "\"By " ((compare_unit != "") ? compare_unit : "period") "\" lists the top items in each period. " : "") "The small note next to a name shows how use changed in the last finished period compared with the one before it (new, or up or down by more than 10%). A period still in progress is left out of that comparison.</p>")
   o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
-  if (nper > 1) o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl lm'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
-  o("<input type='radio' name='tv' id='tv3' class='tv'><label for='tv3' class='tvl l2'>By time of use</label>")
+  if (nper > 1) o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl l2'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
   tl = (pe[nper] > now) ? nper - 1 : nper   # trend compares the last finished period with the one before it
   o("<div class='views'><div class='by-item grid'>")
   for (ci = 1; ci <= nhcat; ci++) {
@@ -2028,60 +2060,95 @@ function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, k
     }
     o("</div>")
   }
-  o("<div class='by-time'>")
-  write_time_view()
-  o("</div>")
   o("</div></details></section>")
 }
 
-# --- When you use it: API calls by hour of the day and by day of the week, stacked by period ---
-function time_chart(title, desc, n, lab, isday, tick,    p, i, W, H, L, R, T, B, pw, ph, slot, bw, maxn, yn, g, y, x, h, c, tip, tot, cost) {
-  maxn = 0
+# --- Requests and cost: per day, by hour of the day, by day of the week, and per project ---
+function write_activity(    ) {
+  o("<section><details open><summary>Requests and cost</summary><p class='note cd'>When you use Claude Code and where the money goes. A <b>request</b> is one API call. The charts show cost and requests over time, then by hour of the day and day of the week (your local time), and last by project.</p><div class='card'>")
+  write_chart()
+  write_hour_charts()
+  write_project_cost()
+  o("</div></details></section>")
+}
+
+# Bars = cost stacked by period (left axis), line = requests (right axis), for n slots such as hours or weekdays
+function combo_chart(title, desc, n, lab, isday, tick,    p, i, W, H, L, R, T, B, pw, ph, slot, bw, maxc, maxn, yc, yn, g, y, x, h, c, tip, tot, cost, pts) {
+  maxc = 0; maxn = 0
   for (i = 1; i <= n; i++) {
-    tot = 0
-    for (p = 1; p <= nper; p++) tot += (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0
+    tot = 0; cost = 0
+    for (p = 1; p <= nper; p++) { tot += (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0; cost += (isday ? TW_c[p, i - 1] : TH_c[p, i - 1]) + 0 }
     if (tot > maxn) maxn = tot
+    if (cost > maxc) maxc = cost
   }
   if (maxn == 0) return
-  yn = nice_max(maxn)
-  W = 1100; H = 260; L = 70; R = 24; T = 12; B = 34
-  pw = W - L - R; ph = H - T - B; slot = pw / n; bw = slot * 0.72
-  o("<h3 class='ch'>" title "</h3><p class='note cd'>" desc "</p>")
-  if (nper > 1) {
-    o("<div class='keys'>")
-    for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
-    o("</div>")
-  }
-  o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='" hesc(title) "'>")
+  yc = nice_max(maxc); yn = nice_max(maxn)
+  W = 1100; H = 300; L = 70; R = 64; T = 14; B = 36
+  pw = W - L - R; ph = H - T - B; slot = pw / n; bw = slot * 0.7
+  o("<h3 class='ch'>" title "</h3><p class='note cd'>" desc "</p><div class='keys'>")
+  if (nper > 1) for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
+  else o("<span><i class='chip' style='background:" pcolor(1) "'></i>Cost (left axis)</span>")
+  o("<span><i class='lk'></i>Requests (right axis)</span></div><div class='chartwrap'>")
+  o("<svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='" hesc(title) "'>")
   for (g = 0; g <= 4; g++) {
     y = T + ph - ph * g / 4
     o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
-    o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" format_tokens(yn * g / 4) "</text>")
+    o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" money(yc * g / 4) "</text>")
+    o("<text x='" (W - R + 10) "' y='" sprintf("%.1f", y + 4) "'>" format_tokens(yn * g / 4) "</text>")
   }
+  pts = ""
   for (i = 1; i <= n; i++) {
     x = L + slot * (i - 1) + (slot - bw) / 2
-    tip = lab[i] ":"; tot = 0; cost = 0
+    tot = 0; cost = 0
     for (p = 1; p <= nper; p++) { tot += (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0; cost += (isday ? TW_c[p, i - 1] : TH_c[p, i - 1]) + 0 }
-    tip = tip " " commas(tot) " calls · " money(cost)
+    tip = lab[i] ": " money(cost) " · " commas(tot) " requests"
     o("<g><title>" hesc(tip) "</title><rect class='hit' x='" sprintf("%.1f", L + slot * (i - 1)) "' y='" T "' width='" sprintf("%.2f", slot) "' height='" ph "'/>")
     y = T + ph
     for (p = 1; p <= nper; p++) {
-      c = (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0
+      c = (isday ? TW_c[p, i - 1] : TH_c[p, i - 1]) + 0
       if (c <= 0) continue
-      h = c / yn * ph; y -= h
-      o("<rect x='" sprintf("%.1f", x) "' y='" sprintf("%.1f", y) "' width='" sprintf("%.2f", bw) "' height='" sprintf("%.2f", h) "' rx='1' fill='" pcolor(p) "'/>")
+      h = c / yc * ph; y -= h
+      o("<rect x='" sprintf("%.1f", x) "' y='" sprintf("%.1f", y) "' width='" sprintf("%.2f", bw) "' height='" sprintf("%.2f", h) "' rx='" (bw > 6 ? 2 : 0) "' fill='" pcolor(p) "'/>")
     }
     o("</g>")
-    if ((i - 1) % tick == 0) o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 20) "' text-anchor='middle'>" lab[i] "</text>")
+    pts = pts sprintf("%.1f,%.1f ", L + slot * (i - 0.5), T + ph - tot / yn * ph)
+    if ((i - 1) % tick == 0) o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" lab[i] "</text>")
   }
+  o("<polyline class='ln' points='" pts "'/>")
   o("</svg></div>")
 }
 
-function write_time_view(    i, lab) {
+function write_hour_charts(    i, lab) {
   for (i = 1; i <= 24; i++) lab[i] = sprintf("%02d", i - 1)
-  time_chart("API calls by hour of the day", "How many API calls you made in each hour of the day (your local time, 24-hour clock). Tall bars are your busiest hours. Hover a bar for the cost.", 24, lab, 0, 2)
+  combo_chart("Cost and requests by hour of the day", "All your days added together and split into the 24 hours of the day (your local time, 24-hour clock). The bars show the cost in each hour; the line shows the requests. Tall bars are the hours you use Claude Code the most.", 24, lab, 0, 2)
   split("Mon Tue Wed Thu Fri Sat Sun", lab, " ")
-  time_chart("API calls by day of the week", "How many API calls you made on each day of the week, over all the periods shown. Hover a bar for the cost.", 7, lab, 1, 1)
+  combo_chart("Cost and requests by day of the week", "The same numbers grouped by day of the week. The bars show the cost; the line shows the requests. It shows which days you lean on Claude Code the most.", 7, lab, 1, 1)
+}
+
+# Cost per project: the folder each session ran in
+function write_project_cost(    ord, n, i, lim, p, key, w, mx, tot, tc) {
+  n = sort_desc(PJ_t, ord)
+  if (n == 0) return
+  lim = (n < top_n) ? n : top_n
+  tc = 0
+  for (i = 1; i <= n; i++) tc += PJ_t[ord[i]]
+  mx = 0
+  for (i = 1; i <= lim; i++) for (p = 1; p <= nper; p++) if (PJ_c[p, ord[i]] > mx) mx = PJ_c[p, ord[i]]
+  o("<h3 class='ch'>Cost per project</h3><p class='note cd'>What each project cost, where a project is the folder a session ran in. The number on the right is the total for the periods shown and its share of all cost" ((nper > 1) ? "; each colored bar is one period" : "") ". Top " lim " of " n ".</p>")
+  o("<ul class='top'>")
+  for (i = 1; i <= lim; i++) {
+    key = ord[i]
+    tot = 0
+    for (p = 1; p <= nper; p++) tot += PJ_n[p, key]
+    o("<li><div class='name'><span title='" hesc(key) "'>" hesc(key) " <small class='tr'>" commas(tot) " requests</small></span><b>" money(PJ_t[key]) " <small class='sh'>" pct(PJ_t[key], tc) "</small></b></div><div class='bars'>")
+    for (p = 1; p <= nper; p++) {
+      w = (mx > 0) ? (PJ_c[p, key] + 0) / mx * 100 : 0
+      if (w > 0 && w < 1) w = 1
+      o("<div class='bar' title='" hesc(plab[p]) "'><i style='width:" sprintf("%.2f", w) "%;background:" pcolor(p) "'></i><em>" money(PJ_c[p, key] + 0) "</em></div>")
+    }
+    o("</div></li>")
+  }
+  o("</ul>")
 }
 
 function hrow(label, vals, cls,    p) {
