@@ -1386,6 +1386,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o(".pgrid h3{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}")
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".mini i{display:block;height:4px;border-radius:2px;margin-top:4px}")
+  o(".top small.sh{color:var(--muted);font-weight:400;font-size:12px;margin-left:4px}.top small.tr{color:var(--muted);font-size:11px;margin-left:8px;font-weight:400}.top small.tr.new{color:var(--good);font-weight:600}")
   o("h3.ch{font-size:15px;margin:26px 0 4px}p.cd{margin:0 0 10px;max-width:900px}")
   o("summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0 0 14px;user-select:none}summary::-webkit-details-marker{display:none}")
   o("summary::before{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex:none}details[open]>summary::before{transform:rotate(45deg)}details:not([open])>summary{margin-bottom:0}summary:focus-visible{outline:2px solid var(--p1);outline-offset:4px;border-radius:4px}")
@@ -1410,6 +1411,8 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
     o("<div>Tool calls<b>" commas(csum["tool", p] + csum["mcp", p]) "</b></div><div>No cache<b>" money(P_nc[p]) "</b></div></div></div>")
   }
   o("</div></section>")
+
+  write_model_chart()
 
   # --- Comparison table ---
   o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached).</p><div class='card tw'><table><thead><tr><th></th>")
@@ -1846,6 +1849,36 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   o("</div></details></section>")
 }
 
+# --- Cost by model: one bar per period, one segment per model ---
+function write_model_chart(    n, ord, i, p, j, mk, mc, fg, nm, names, c, other, w, tot, cost) {
+  n = sort_desc(mod_cost, ord)
+  if (n == 0) return
+  split("#5b6cf0|#e08a2e|#1f9e8a|#c2527a|#8b5cf6|#3b82f6|#d4a72c|#b8b4aa", mc, "|")
+  split("#fff|#1d1c19|#fff|#fff|#fff|#fff|#1d1c19|#1d1c19", fg, "|")
+  nm = (n > 7) ? 7 : n
+  o("<section><details open><summary>Cost by model</summary><p class='note cd'>Which models your money went to. Each bar is 100% of that period's cost. A pricier model (such as Opus) costs more for the same work than a cheaper one (such as Sonnet or Haiku), so a shift between colors from one period to the next shows a change in which model you lean on.</p><div class='card'><div class='keys'>")
+  for (i = 1; i <= nm; i++) o("<span><i class='chip' style='background:" mc[i] "'></i>" hesc(ord[i]) "</span>")
+  if (n > nm) o("<span><i class='chip' style='background:" mc[8] "'></i>Other (" (n - nm) ")</span>")
+  o("</div>")
+  for (p = 1; p <= nper; p++) {
+    if (P_cost[p] <= 0) continue
+    o("<div class='row'><span>" hesc(plab[p]) "</span><div class='stack'>")
+    other = 0
+    for (i = 1; i <= n; i++) {
+      c = PM_cost[p, ord[i]] + 0
+      if (i > nm) { other += c; continue }
+      w = c / P_cost[p] * 100
+      if (w > 0) o("<span style='width:" sprintf("%.2f", w) "%;background:" mc[i] ";color:" fg[i] "' title='" hesc(ord[i]) ": " money(c) " (" sprintf("%.1f", w) "% of cost)'>" ((w >= 6) ? sprintf("%.0f%%", w) : "") "</span>")
+    }
+    if (other > 0) {
+      w = other / P_cost[p] * 100
+      o("<span style='width:" sprintf("%.2f", w) "%;background:" mc[8] ";color:" fg[8] "' title='Other models: " money(other) " (" sprintf("%.1f", w) "% of cost)'>" ((w >= 6) ? sprintf("%.0f%%", w) : "") "</span>")
+    }
+    o("</div><span class='v'>" money(P_cost[p]) "</span></div>")
+  }
+  o("</div></details></section>")
+}
+
 # --- Models: one row per model, one column per period ---
 function write_models(    n, ord, i, p, mk, c) {
   n = sort_desc(mod_cost, ord)
@@ -1884,12 +1917,13 @@ function period_list(cat, p, keys, vals,    k, kp, n) {
 }
 
 # --- Top lists: by item (bars per period) or by period (lists per period) ---
-function write_top(    ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
-  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, skills, slash commands and helper agents (subagents) you used most. Each number is how many times it was used.</p>")
+function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
+  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, skills, slash commands and helper agents (subagents) you used most. Each number is how many times it was used, with its share of that list. The small note next to a name shows how use changed in the last finished period compared with the one before it (new, or up or down by more than 10%). A period still in progress is left out of that comparison.</p>")
   if (nper > 1) {
     o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
     o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl l2'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
   }
+  tl = (pe[nper] > now) ? nper - 1 : nper   # trend compares the last finished period with the one before it
   o("<div class='views'><div class='by-item grid'>")
   for (ci = 1; ci <= ncat; ci++) {
     cat = cats[ci]
@@ -1898,13 +1932,23 @@ function write_top(    ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) 
     o("<div class='card'><div class='kh' style='margin-bottom:6px'>" cat_title[cat] "</div>")
     if (n == 0) { o("<p class='note'>None in this range.</p></div>"); continue }
     n = sort_desc(tot, ord)
+    gtot[cat] = 0
+    for (i = 1; i <= n; i++) gtot[cat] += tot[ord[i]]
     lim = (n < top_n) ? n : top_n
     mx = 0
     for (i = 1; i <= lim; i++) for (p = 1; p <= nper; p++) if (cnt[cat, p, ord[i]] > mx) mx = cnt[cat, p, ord[i]]
     o("<ul class='top'>")
     for (i = 1; i <= lim; i++) {
       key = ord[i]
-      o("<li><div class='name'><span title='" hesc(key) "'>" hesc(key) "</span><b>" commas(tot[key]) "</b></div><div class='bars'>")
+      trend = ""
+      if (tl > 1) {
+        a1 = cnt[cat, tl, key] + 0; a0 = cnt[cat, tl - 1, key] + 0
+        if (a1 > 0 && a0 == 0) trend = "<small class='tr new'>new</small>"
+        else if (a0 > 0 && a1 == 0) trend = "<small class='tr'>not used</small>"
+        else if (a0 > 0 && a1 > a0 * 1.1) trend = sprintf("<small class='tr'>▲ %.0f%%</small>", (a1 - a0) / a0 * 100)
+        else if (a0 > 0 && a1 < a0 * 0.9) trend = sprintf("<small class='tr'>▼ %.0f%%</small>", (a0 - a1) / a0 * 100)
+      }
+      o("<li><div class='name'><span title='" hesc(key) "'>" hesc(key) trend "</span><b>" commas(tot[key]) " <small class='sh'>" pct(tot[key], gtot[cat]) "</small></b></div><div class='bars'>")
       for (p = 1; p <= nper; p++) {
         w = (mx > 0) ? (cnt[cat, p, key] + 0) / mx * 100 : 0
         if (w > 0 && w < 1) w = 1
