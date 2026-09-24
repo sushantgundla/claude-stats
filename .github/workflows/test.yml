@@ -16,19 +16,24 @@ jobs:
       - uses: actions/checkout@v4
       - run: bash tests/run-tests.sh
 
-  powershell:
-    name: ${{ matrix.shell }} on ${{ matrix.os }}
+  windows-powershell-5:
+    name: Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        shell: powershell
+        run: ./tests/run-tests.ps1
+
+  powershell-7:
+    name: PowerShell 7 on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: windows-latest, shell: powershell }   # Windows PowerShell 5.1
-          - { os: windows-latest, shell: pwsh }         # PowerShell 7 on Windows
-          - { os: ubuntu-latest, shell: pwsh }
-          - { os: macos-latest, shell: pwsh }
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Run tests
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: ./tests/run-tests.ps1
