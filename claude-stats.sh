@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# claudecost - Claude Code Usage Stats
+# claude-stats - Claude Code Usage Stats
 # ============================================================================
 # A zero-dependency bash alternative to `npx ccusage`.
 # Reads JSONL session logs from ~/.claude/projects/ and displays:
@@ -15,16 +15,16 @@
 # Works on: macOS (default awk), Linux (gawk)
 #
 # Usage:
-#   ./claudecost.sh                                   # daily view, all history
-#   ./claudecost.sh --days 7                          # last 7 days
-#   ./claudecost.sh --since 2026-09-17 --until 2026-09-23
-#   ./claudecost.sh --since "2026-09-16 11:30" --until "2026-09-23 11:30"
-#   ./claudecost.sh --reset "wed 11:30"               # compare the last 2 quota weeks
-#   ./claudecost.sh --reset "wed 11:30" --weeks 4 --current
-#   ./claudecost.sh --reset "wed 11:30" --html report.html
-#   ./claudecost.sh --freq monthly                    # monthly chart
-#   ./claudecost.sh --project my-app                  # filter by project name
-#   ./claudecost.sh --offline                         # skip LiteLLM, use hardcoded pricing
+#   ./claude-stats.sh                                   # daily view, all history
+#   ./claude-stats.sh --days 7                          # last 7 days
+#   ./claude-stats.sh --since 2026-09-17 --until 2026-09-23
+#   ./claude-stats.sh --since "2026-09-16 11:30" --until "2026-09-23 11:30"
+#   ./claude-stats.sh --reset "wed 11:30"               # compare the last 2 quota weeks
+#   ./claude-stats.sh --reset "wed 11:30" --weeks 4 --current
+#   ./claude-stats.sh --reset "wed 11:30" --html report.html
+#   ./claude-stats.sh --freq monthly                    # monthly chart
+#   ./claude-stats.sh --project my-app                  # filter by project name
+#   ./claude-stats.sh --offline                         # skip LiteLLM, use hardcoded pricing
 #
 # Pricing: fetches latest from LiteLLM on every run (falls back to hardcoded)
 # Dedup strategy: API message id; the largest count per field wins, because
@@ -2199,8 +2199,8 @@ JOBS=$( (sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4) | head -1
 BATCH=$(( (FILE_COUNT + JOBS * 4 - 1) / (JOBS * 4) ))
 [[ "$BATCH" -lt 1 ]] && BATCH=1
 PARTS_DIR=$(mktemp -d)
-# CLAUDECOST_READER=awk forces the awk-only reader (for testing or when perl misbehaves)
-READER="${CLAUDECOST_READER:-}"
+# CLAUDE_STATS_READER=awk forces the awk-only reader (for testing or when perl misbehaves)
+READER="${CLAUDE_STATS_READER:-}"
 if [[ -z "$READER" ]]; then
   if command -v perl >/dev/null 2>&1; then READER=perl; else READER=awk; fi
 fi

@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 <#
 .SYNOPSIS
-  claudecost - Claude Code usage stats (PowerShell port of claudecost.sh)
+  claude-stats - Claude Code usage stats (PowerShell port of claude-stats.sh)
 
 .DESCRIPTION
   A zero-dependency PowerShell alternative to `npx ccusage`.
@@ -14,7 +14,7 @@
     - Optional self-contained HTML report (-Html)
 
   Works on Windows PowerShell 5.1 and PowerShell 7+ (Windows, macOS, Linux).
-  The bash-style options of claudecost.sh (--days 7, --reset "wed 11:30", ...) work too.
+  The bash-style options of claude-stats.sh (--days 7, --reset "wed 11:30", ...) work too.
 
   Pricing: fetches latest from LiteLLM on every run (falls back to hardcoded)
   Dedup strategy: API message id; the largest count per field wins, because
@@ -25,17 +25,17 @@
   Cache writes: 1-hour writes (Claude Code's default) are priced at the 1-hour rate.
 
 .EXAMPLE
-  .\claudecost.ps1                                        # all history
+  .\claude-stats.ps1                                        # all history
 .EXAMPLE
-  .\claudecost.ps1 -Days 7                                # last 7 days
+  .\claude-stats.ps1 -Days 7                                # last 7 days
 .EXAMPLE
-  .\claudecost.ps1 -Since "2026-09-16 11:30" -Until "2026-09-23 11:30"
+  .\claude-stats.ps1 -Since "2026-09-16 11:30" -Until "2026-09-23 11:30"
 .EXAMPLE
-  .\claudecost.ps1 -Reset "wed 11:30" -Weeks 4 -Current   # compare quota weeks
+  .\claude-stats.ps1 -Reset "wed 11:30" -Weeks 4 -Current   # compare quota weeks
 .EXAMPLE
-  .\claudecost.ps1 -Reset "wed 11:30" -Html report.html
+  .\claude-stats.ps1 -Reset "wed 11:30" -Html report.html
 .EXAMPLE
-  .\claudecost.ps1 -Freq monthly -Project my-app -Offline
+  .\claude-stats.ps1 -Freq monthly -Project my-app -Offline
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -70,7 +70,7 @@ class CRec { [long]$Ep; [int]$P; [string]$Name }
 
 function Show-Usage {
   Write-Host @'
-Usage: claudecost.ps1 [options]        (bash-style --options work too, e.g. --days 7)
+Usage: claude-stats.ps1 [options]        (bash-style --options work too, e.g. --days 7)
 
 One time range (default is all history):
   -Days N               Last N days
@@ -102,7 +102,7 @@ Other:
 
 function Fail([string]$msg) { [Console]::Error.WriteLine("Error: $msg"); exit 1 }
 
-# --- Options: PowerShell parameters, plus the bash-style ones of claudecost.sh ---
+# --- Options: PowerShell parameters, plus the bash-style ones of claude-stats.sh ---
 $DaysV = $Days; $SinceV = $Since; $UntilV = $Until; $MonthV = $Month; $ResetV = $Reset
 $CompareV = $Compare; $HtmlV = $Html; $ProjectV = $Project; $OfflineV = [bool]$Offline; $CurrentV = [bool]$Current
 $FreqV = if ($Freq) { $Freq } else { 'auto' }
@@ -161,9 +161,9 @@ if (-not [Console]::IsOutputRedirected) {
   # Windows consoles only understand colour codes once "virtual terminal" mode is on; without it they print as text
   if (-not $NOCOLOR -and [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and -not $env:WT_SESSION) {
     try {
-      Add-Type -Namespace ClaudeCost -Name Con -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out int m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, int m);'
-      $vtH = [ClaudeCost.Con]::GetStdHandle(-11); $vtM = 0
-      if (-not ([ClaudeCost.Con]::GetConsoleMode($vtH, [ref]$vtM) -and [ClaudeCost.Con]::SetConsoleMode($vtH, ($vtM -bor 4)))) { $NOCOLOR = $true }
+      Add-Type -Namespace ClaudeStats -Name Con -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr h, out int m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, int m);'
+      $vtH = [ClaudeStats.Con]::GetStdHandle(-11); $vtM = 0
+      if (-not ([ClaudeStats.Con]::GetConsoleMode($vtH, [ref]$vtM) -and [ClaudeStats.Con]::SetConsoleMode($vtH, ($vtM -bor 4)))) { $NOCOLOR = $true }
     }
     catch { $NOCOLOR = $true }
   }
@@ -905,7 +905,7 @@ function NiceMax([double]$x) {
 }
 # Keys ordered by value, highest first (ties by name)
 function SortDesc($map) {
-  # ties by name, compared byte by byte (Sort-Object would ignore case, unlike claudecost.sh)
+  # ties by name, compared byte by byte (Sort-Object would ignore case, unlike claude-stats.sh)
   $items = [Collections.Generic.List[object]]::new([object[]]@($map.GetEnumerator()))
   $items.Sort([Comparison[object]]{ param($x, $y)
     $c = ([double]$y.Value).CompareTo([double]$x.Value)

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💸 claudecost
+# 💸 claude-stats
 
 **See what your Claude Code usage would cost — and where every token goes.**
 
@@ -10,7 +10,7 @@ Compare days, weeks (your Pro/Max quota week too), months or years — in the te
 ![bash](https://img.shields.io/badge/bash-script-4EAA25?logo=gnubash&logoColor=white)
 ![PowerShell](https://img.shields.io/badge/PowerShell-script-5391FE?logo=powershell&logoColor=white)
 ![macOS | Linux | Windows](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-supported-555)
-[![test](https://github.com/sushantgundla/claudecost/actions/workflows/test.yml/badge.svg)](https://github.com/sushantgundla/claudecost/actions/workflows/test.yml)
+[![test](https://github.com/sushantgundla/claude-stats/actions/workflows/test.yml/badge.svg)](https://github.com/sushantgundla/claude-stats/actions/workflows/test.yml)
 ![no install](https://img.shields.io/badge/dependencies-none-blue)
 ![local only](https://img.shields.io/badge/data-stays%20local-8b5cf6)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -50,45 +50,45 @@ One script per system, same features and same output. Nothing to install. Everyt
 
 | You use | Script | Runs in |
 | --- | --- | --- |
-| macOS or Linux | `claudecost.sh` | Terminal (bash) |
-| Windows | `claudecost.ps1` | PowerShell (the one that comes with Windows, or PowerShell 7) |
+| macOS or Linux | `claude-stats.sh` | Terminal (bash) |
+| Windows | `claude-stats.ps1` | PowerShell (the one that comes with Windows, or PowerShell 7) |
 
-`claudecost.ps1` also runs on macOS and Linux if you have [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`).
+`claude-stats.ps1` also runs on macOS and Linux if you have [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`).
 
 ## 🚀 Install
 
 **macOS or Linux**
 
 ```bash
-curl -O https://raw.githubusercontent.com/sushantgundla/claudecost/main/claudecost.sh
-chmod +x claudecost.sh
+curl -O https://raw.githubusercontent.com/sushantgundla/claude-stats/main/claude-stats.sh
+chmod +x claude-stats.sh
 ```
 
 **Windows** (PowerShell)
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/sushantgundla/claudecost/main/claudecost.ps1 -OutFile claudecost.ps1
+Invoke-WebRequest https://raw.githubusercontent.com/sushantgundla/claude-stats/main/claude-stats.ps1 -OutFile claude-stats.ps1
 ```
 
 If Windows says running scripts is disabled, run it like this once (nothing is changed on your system):
-`powershell -ExecutionPolicy Bypass -File .\claudecost.ps1 -Days 7`
+`powershell -ExecutionPolicy Bypass -File .\claude-stats.ps1 -Days 7`
 
 ## ⚡ Quick start
 
 **macOS or Linux**
 
 ```bash
-./claudecost.sh --days 7                        # the last 7 days
-./claudecost.sh --reset "wed 23:30" --weeks 2   # your last 2 quota weeks, side by side
-./claudecost.sh --reset "wed 23:30" --html report.html && open report.html
+./claude-stats.sh --days 7                        # the last 7 days
+./claude-stats.sh --reset "wed 23:30" --weeks 2   # your last 2 quota weeks, side by side
+./claude-stats.sh --reset "wed 23:30" --html report.html && open report.html
 ```
 
 **Windows** (PowerShell)
 
 ```powershell
-.\claudecost.ps1 -Days 7                        # the last 7 days
-.\claudecost.ps1 -Reset "wed 23:30" -Weeks 2    # your last 2 quota weeks, side by side
-.\claudecost.ps1 -Reset "wed 23:30" -Html report.html; start report.html
+.\claude-stats.ps1 -Days 7                        # the last 7 days
+.\claude-stats.ps1 -Reset "wed 23:30" -Weeks 2    # your last 2 quota weeks, side by side
+.\claude-stats.ps1 -Reset "wed 23:30" -Html report.html; start report.html
 ```
 
 `--reset` / `-Reset` is the weekday and local time your weekly limit resets. Find it on
@@ -97,9 +97,9 @@ claude.ai under **Settings → Usage**.
 ### Same options, two spellings
 
 Every option works in both scripts. On Windows write it PowerShell-style (`-Days 7`). The
-bash spelling (`--days 7`) also works in `claudecost.ps1`, so the examples below run on both.
+bash spelling (`--days 7`) also works in `claude-stats.ps1`, so the examples below run on both.
 
-| bash (`claudecost.sh`) | PowerShell (`claudecost.ps1`) |
+| bash (`claude-stats.sh`) | PowerShell (`claude-stats.ps1`) |
 | --- | --- |
 | `--days 7` | `-Days 7` |
 | `--since 2026-09-01 --until 2026-09-07` | `-Since 2026-09-01 -Until 2026-09-07` |
@@ -112,28 +112,28 @@ bash spelling (`--days 7`) also works in `claudecost.ps1`, so the examples below
 
 ## 🧭 Commands
 
-The tables use the bash spelling. On Windows use `.\claudecost.ps1` and the PowerShell
+The tables use the bash spelling. On Windows use `.\claude-stats.ps1` and the PowerShell
 spelling from the table above (or keep the bash one).
 
 ### One time range
 
 | Command | Shows |
 | --- | --- |
-| `./claudecost.sh` | All history |
-| `./claudecost.sh --days 7` | Last 7 days |
-| `./claudecost.sh --since 2026-09-01 --until 2026-09-07` | Those dates (`--until` is inclusive) |
-| `./claudecost.sh --since "2026-09-16 11:30" --until "2026-09-23 11:30"` | Exact times |
-| `./claudecost.sh --month 2026-08` | One calendar month |
+| `./claude-stats.sh` | All history |
+| `./claude-stats.sh --days 7` | Last 7 days |
+| `./claude-stats.sh --since 2026-09-01 --until 2026-09-07` | Those dates (`--until` is inclusive) |
+| `./claude-stats.sh --since "2026-09-16 11:30" --until "2026-09-23 11:30"` | Exact times |
+| `./claude-stats.sh --month 2026-08` | One calendar month |
 
 ### Compare periods (up to 5)
 
 | Command | Compares |
 | --- | --- |
-| `./claudecost.sh --reset "wed 23:30" --weeks 4` | Your last 4 quota weeks |
-| `./claudecost.sh --compare day --last 5` | The last 5 days |
-| `./claudecost.sh --compare week --last 3` | The last 3 calendar weeks (Monday 00:00) |
-| `./claudecost.sh --compare month --last 4 --current` | The last 4 months, plus this month so far |
-| `./claudecost.sh --compare year --last 2 --current` | The last 2 years, plus this year so far |
+| `./claude-stats.sh --reset "wed 23:30" --weeks 4` | Your last 4 quota weeks |
+| `./claude-stats.sh --compare day --last 5` | The last 5 days |
+| `./claude-stats.sh --compare week --last 3` | The last 3 calendar weeks (Monday 00:00) |
+| `./claude-stats.sh --compare month --last 4 --current` | The last 4 months, plus this month so far |
+| `./claude-stats.sh --compare year --last 2 --current` | The last 2 years, plus this year so far |
 
 - `--last N` counts complete periods; `--current` adds the one in progress. 5 at most.
 - The cost chart goes one step finer than what you compare: years by month, months by
@@ -184,7 +184,7 @@ chart has a one-line description in plain words.
 ## 🔁 How it counts
 
 Claude Code logs a reply once per streamed block, and resumed or forked sessions copy old
-messages into new files, often with new timestamps. claudecost counts each thing once:
+messages into new files, often with new timestamps. claude-stats counts each thing once:
 
 - API calls by message id, tool and MCP calls by `tool_use` id, slash commands by message id
 - For a call logged several times, the largest token count wins (early lines are partial)
@@ -198,11 +198,11 @@ uses built-in prices). Models without a known price are marked `*` and priced li
 
 ## 🏎️ Speed
 
-`claudecost.sh`: a few seconds, even with months of logs (tested on a MacBook). Files are
+`claude-stats.sh`: a few seconds, even with months of logs (tested on a MacBook). Files are
 read in parallel, and `perl` (on macOS and most Linux) pulls out just the fields needed.
 Without perl it falls back to plain awk, about twice as slow.
 
-`claudecost.ps1` reads the files one after another. About 4 seconds for 270 MB of logs on
+`claude-stats.ps1` reads the files one after another. About 4 seconds for 270 MB of logs on
 PowerShell 7; expect longer on Windows PowerShell 5.1 with several GB.
 
 ## ⚙️ Settings
@@ -210,11 +210,11 @@ PowerShell 7; expect longer on Windows PowerShell 5.1 with several GB.
 | Variable | Effect |
 | --- | --- |
 | `NO_COLOR=1` | No colours (also off automatically when output is not a terminal) |
-| `FORCE_COLOR=1` | Keep colours when piping, e.g. `FORCE_COLOR=1 ./claudecost.sh \| less -R` |
+| `FORCE_COLOR=1` | Keep colours when piping, e.g. `FORCE_COLOR=1 ./claude-stats.sh \| less -R` |
 | `CLAUDE_DIR` | Same as `--dir` / `-Dir` |
-| `CLAUDECOST_READER=awk` | Force the plain awk reader (`claudecost.sh` only) |
+| `CLAUDE_STATS_READER=awk` | Force the plain awk reader (`claude-stats.sh` only) |
 
-On Windows set a variable for one run like this: `$env:NO_COLOR = "1"; .\claudecost.ps1`
+On Windows set a variable for one run like this: `$env:NO_COLOR = "1"; .\claude-stats.ps1`
 
 ## 📦 Requirements
 
