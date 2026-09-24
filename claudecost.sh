@@ -436,7 +436,7 @@ function sort_desc(arr, sorted,    i, j, n, tmp, k) {
   for (i = 2; i <= n; i++) {
     tmp = sorted[i]
     j = i - 1
-    while (j >= 1 && arr[sorted[j]] < arr[tmp]) {
+    while (j >= 1 && (arr[sorted[j]] < arr[tmp] || (arr[sorted[j]] == arr[tmp] && sorted[j] > tmp))) {   # ties by name
       sorted[j+1] = sorted[j]
       j--
     }
@@ -460,6 +460,7 @@ function emit_u(k, p, d, m, a, b, c, e, h, ep, sid, sd, cwd) {
 
 # First word of a shell command, as a name: skips VAR=value prefixes and a leading "cd dir" line or "cd dir &&"
 function bash_word(c,    n, t, i, w) {
+  gsub(/[A-Za-z_][A-Za-z0-9_]*=\$\(/, " ", c)   # D=$(find ...) runs find
   gsub(/\\n/, " ; ", c); gsub(/\\t/, " ", c); gsub(/&&|;/, " ; ", c)
   n = split(c, t, /[ \t]+/)
   i = 1
