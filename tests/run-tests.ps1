@@ -43,3 +43,4 @@ if ($LASTEXITCODE -ne 1) { Write-Host "MISSING: -Days abc should exit with 1, go
 Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
 if ($fail) { Write-Host 'FAILED'; Write-Host $out; exit 1 }
 Write-Host 'OK: claudecost.ps1'
+exit 0   # the bad-option check above leaves an exit code of 1 behind
