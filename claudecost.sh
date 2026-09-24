@@ -1340,7 +1340,7 @@ function o(s) { print s > html_file }
 
 function pcolor(p) { return "var(--p" ((p - 1) % 5 + 1) ")" }
 
-function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd, d, c, cat, ci, seg, parts, kinds, kcol, ktok, kc, kn, tin, mord2, nm2, mk) {
+function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd, d, c, cat, ci, seg, parts, kinds, kcol, kfg, ktok, kc, kn, tin, mord2, nm2, mk) {
   o("<!doctype html><html lang='en'><head><meta charset='utf-8'>")
   o("<meta name='viewport' content='width=device-width,initial-scale=1'>")
   o("<title>Claude Code Usage</title>")
@@ -1363,7 +1363,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o("th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}th{color:var(--muted);font-weight:600;font-size:13px}")
   o("th:first-child,td:first-child{text-align:left}tr.sub td:first-child{padding-left:28px;color:var(--muted)}tr.tot td{font-weight:700}")
   o("td.list{text-align:left;white-space:normal;min-width:130px;font-size:13px;color:var(--muted)}td.list b{color:var(--ink);font-weight:600}")
-  o(".stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--soft)}.stack span{display:block;height:100%}")
+  o(".stack{display:flex;height:24px;border-radius:8px;overflow:hidden;background:var(--soft)}.stack span{display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden}.cap{margin:-2px 0 10px 80px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}")
   o(".row{display:grid;grid-template-columns:68px 1fr 84px;gap:12px;align-items:center;margin:6px 0;font-size:13px;font-variant-numeric:tabular-nums}.row .v{text-align:right}")
   o(".top{list-style:none;margin:0;padding:0}.top li{padding:8px 0;border-bottom:1px solid var(--line)}.top li:last-child{border-bottom:0}")
   o(".top .name{display:flex;justify-content:space-between;gap:10px;font-size:14px}.top .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
@@ -1385,6 +1385,8 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".mini i{display:block;height:4px;border-radius:2px;margin-top:4px}")
   o("h3.ch{font-size:15px;margin:26px 0 4px}p.cd{margin:0 0 10px;max-width:900px}")
+  o("summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0 0 14px;user-select:none}summary::-webkit-details-marker{display:none}")
+  o("summary::before{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex:none}details[open]>summary::before{transform:rotate(45deg)}details:not([open])>summary{margin-bottom:0}summary:focus-visible{outline:2px solid var(--p1);outline-offset:4px;border-radius:4px}")
   o("</style></head><body><div class='wrap'>")
 
   # --- Header ---
@@ -1408,7 +1410,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o("</div></section>")
 
   # --- Comparison table ---
-  o("<section><h2>" (nper > 1 ? "Comparison" : "Summary") "</h2><div class='card tw'><table><thead><tr><th></th>")
+  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><div class='card tw'><table><thead><tr><th></th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(P_calls[p]);                                             hrow("API calls", v, "")
@@ -1428,12 +1430,14 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
     for (p = 1; p <= nper; p++) o("<td class='list'>" top_inline(cat, p, 5) "</td>")
     o("</tr>")
   }
-  o("</tbody></table></div></section>")
+  o("</tbody></table></div></details></section>")
 
   # --- Where the money goes ---
-  split("Cache read (hit)|Cache write (miss)|Output|Input, not cached", kinds, "|")
+  split("Cache read (hit) · good|Cache write (miss) · avoid|Output|Input, not cached · avoid", kinds, "|")
   split("var(--k1)|var(--k2)|var(--k3)|var(--k4)", kcol, "|")
-  o("<section><h2>Where the money goes</h2><div class='card'><div class='keys'>")
+  split("#fff|#1d1c19|#fff|#1d1c19", kfg, "|")
+  o("<section><details open><summary>Where the money goes</summary><div class='card'>")
+  o("<p class='note' style='margin:0 0 12px'>Each bar is the cost split by kind. <b>Cache read is good</b>: the conversation is already stored, so it costs about 0.1x the input price. <b>Cache write is not</b>: new or expired content is stored again at 1.25x to 2x, and <b>input not cached</b> costs the full 1x. A healthy report reads far more from cache than it writes: look for a high cache-read share of input tokens (under each bar).</p><div class='keys'>")
   for (j = 1; j <= 4; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kinds[j] "</span>")
   o("</div>")
   for (p = 1; p <= nper; p++) {
@@ -1441,12 +1445,13 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
     o("<div class='row'><span>" hesc(plab[p]) "</span><div class='stack'>")
     for (j = 1; j <= 4; j++) {
       w = (P_cost[p] > 0) ? kc[j] / P_cost[p] * 100 : 0
-      if (w > 0) o("<span style='width:" sprintf("%.2f", w) "%;background:" kcol[j] "' title='" kinds[j] ": " money(kc[j]) " (" sprintf("%.0f", w) "%)'></span>")
+      if (w > 0) o("<span style='width:" sprintf("%.2f", w) "%;background:" kcol[j] ";color:" kfg[j] "' title='" kinds[j] ": " money(kc[j]) " (" sprintf("%.1f", w) "% of cost)'>" ((w >= 6) ? sprintf("%.0f%%", w) : "") "</span>")
     }
     o("</div><span class='v'>" money(P_cost[p]) "</span></div>")
+    tin = P_in[p] + P_cw5[p] + P_cw1h[p] + P_cr[p]
+    o("<div class='cap'>Of input tokens: <b>" pct(P_cr[p], tin) "</b> cache read · " pct(P_cw5[p] + P_cw1h[p], tin) " cache write · " pct(P_in[p], tin) " not cached</div>")
   }
-  o("<p class='note' style='margin:14px 0 0'>Every step re-sends the whole conversation. Most of it comes from cache (cheap per token, but paid on every call), so cache reads usually dominate.</p>")
-  o("</div></section>")
+  o("</div></details></section>")
 
   write_chart()
   write_context()
@@ -1454,12 +1459,12 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   write_top()
 
   # --- Notes ---
-  o("<section><h2>How to read this</h2><div class='card'><ul class='note' style='margin:0;padding-left:18px'>")
+  o("<section><details open><summary>How to read this</summary><div class='card'><ul class='note' style='margin:0;padding-left:18px'>")
   o("<li><b>Costs are API list-price estimates</b>, not a subscription bill. Pro and Max quotas are measured differently.</li>")
   o("<li><b>Cache read (hit)</b>: conversation already cached, billed at about 0.1x input. <b>Cache write (miss)</b>: new content stored for 5 minutes (1.25x) or 1 hour (2x). <b>Not cached</b>: plain input at 1x. Output is never cached.</li>")
   o("<li>Cost grows with <b>number of calls × conversation size × model price</b>. Every tool call is another API call that re-reads the conversation.</li>")
   o("<li><b>Counted once each.</b> API responses by message id (" commas(raw_u) " log lines → " commas(uniq_u) " unique), tool and MCP calls by tool_use id (" commas(raw_t) " → " commas(uniq_t) "), slash commands by message uuid (" commas(raw_c) " → " commas(uniq_c) "). Copies come from streamed replies and resumed or forked sessions; each is placed at its earliest timestamp. Periods use local time.</li>")
-  o("</ul></div></section>")
+  o("</ul></div></details></section>")
   o("</div></body></html>")
   close(html_file)
 }
@@ -1478,7 +1483,7 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
   pw = W - L - R; ph = H - T - B
   slot = pw / nb; bw = slot * 0.7
   if (bw < 1) bw = 1
-  o("<section><h2>Cost per " unit_word(bucket_unit) "</h2><div class='card'><div class='keys'>")
+  o("<section><details open><summary>Cost per " unit_word(bucket_unit) "</summary><div class='card'><div class='keys'>")
   if (nper > 1) for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
   else o("<span><i class='chip' style='background:" pcolor(1) "'></i>Cost (left axis)</span>")
   o("<span><i class='lk'></i>API calls (right axis)</span></div><div class='chartwrap'>")
@@ -1527,7 +1532,7 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
     for (i = 1; i <= nb; i += step)
       o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" hesc(bucket_tick(bk[i], bucket_unit)) "</text>")
   }
-  o("</svg></div></div></section>")
+  o("</svg></div></div></details></section>")
 }
 
 # --- Context size ---
@@ -1650,8 +1655,8 @@ function line_chart(title, desc, xtitle, ytitle, n, tk,    p, i, W, H, L, R, T, 
   o("</svg></div>")
 }
 
-function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kname, tot, run, b, lab) {
-  o("<section><h2>Context size</h2><div class='card'>")
+function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kfg, kname, tot, run, b, lab) {
+  o("<section><details open><summary>Context size</summary><div class='card'>")
   o("<p class='note' style='margin:0 0 14px'>Every API call re-sends the whole conversation, so its size is the <b>context</b>: input + cache write + cache read tokens. It is counted per API call, not per typed prompt: one prompt can trigger many calls (tool loops), each with its own context. Main conversation only; subagents are on their own row.</p>")
   # per-period table
   o("<div class='tw'><table><thead><tr><th></th>")
@@ -1760,6 +1765,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   # 5. Share of calls by context size band
   split("Under 50k|50k to 100k|100k to 200k|200k to 500k|Over 500k", kname, "|")
   split("var(--k3)|var(--k1)|var(--k2)|var(--p2)|var(--p4)", kcol, "|")
+  split("#fff|#fff|#1d1c19|#1d1c19|#fff", kfg, "|")
   o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, grouped into five size bands (a summary of where the line crosses 50k, 100k, 200k and 500k). Each bar is 100% of that period's API calls; the wider the orange and pink parts, the more calls ran on 200k+ tokens of context.</p><div class='keys'>")
   for (j = 1; j <= 5; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kname[j] "</span>")
   o("</div>")
@@ -1772,17 +1778,17 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
       tot = 0
       for (i = lo; i < hi && i <= CTX_MAXBIN; i++) tot += CT_h[p, i]
       share = tot / CT_n[p] * 100
-      if (share > 0) o("<span style='width:" sprintf("%.2f", share) "%;background:" kcol[j] "' title='" kname[j] ": " sprintf("%.1f", share) "% of calls'></span>")
+      if (share > 0) o("<span style='width:" sprintf("%.2f", share) "%;background:" kcol[j] ";color:" kfg[j] "' title='" kname[j] ": " sprintf("%.1f", share) "% of calls'>" ((share >= 6) ? sprintf("%.0f%%", share) : "") "</span>")
     }
     o("</div><span class='v'>" commas(CT_n[p]) " calls</span></div>")
   }
-  o("</div></section>")
+  o("</div></details></section>")
 }
 
 # --- Models: one row per model, one column per period ---
 function write_models(    n, ord, i, p, mk, c) {
   n = sort_desc(mod_cost, ord)
-  o("<section><h2>Models</h2><div class='card tw'><table><thead><tr><th>Model</th>")
+  o("<section><details open><summary>Models</summary><div class='card tw'><table><thead><tr><th>Model</th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   if (nper > 1) o("<th>Total</th>")
   o("</tr></thead><tbody>")
@@ -1802,7 +1808,7 @@ function write_models(    n, ord, i, p, mk, c) {
   if (nper > 1) o("<td>" money(total_cost) "<small>" commas(uniq_u) " calls</small></td>")
   o("</tr></tbody></table></div>")
   if (nun > 0) o("<p class='note'>* No price found; costed at default Sonnet rates.</p>")
-  o("</section>")
+  o("</details></section>")
 }
 
 # One period's list for one category, highest first; returns the count of keys
@@ -1818,7 +1824,7 @@ function period_list(cat, p, keys, vals,    k, kp, n) {
 
 # --- Top lists: by item (bars per period) or by period (lists per period) ---
 function write_top(    ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
-  o("<section><h2>What was used · top " top_n "</h2>")
+  o("<section><details open><summary>What was used · top " top_n "</summary>")
   if (nper > 1) {
     o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
     o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl l2'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
@@ -1874,7 +1880,7 @@ function write_top(    ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) 
     }
     o("</div>")
   }
-  o("</div></section>")
+  o("</div></details></section>")
 }
 
 function hrow(label, vals, cls,    p) {
