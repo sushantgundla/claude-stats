@@ -1696,17 +1696,18 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
   line_chart("How many calls go over a given size?", "For any size on the bottom axis, the line shows the <b>% of API calls with more context than that</b>. Read up from 200k to see what share of calls carry more than 200k tokens. The line always starts at 100% and falls as the size grows; the further right it stays high, the more of your calls carry big conversations.", "Context size (tokens)", "% of calls above this size", 41, 4)
 
-  # 3. Peak context per session: share of sessions in each 50k band
+  # 3. Peak context per session: share of sessions whose peak reached at least each size.
+  # Cumulative, so it stays a smooth falling line even when a week has only a few sessions.
   for (p = 1; p <= nper; p++) {
     LOK[p] = (SS_n[p] > 0)
-    for (i = 1; i <= 20; i++) {
-      tot = 0
-      for (b = (i - 1) * 10; b < i * 10; b++) tot += SS_pk_h[p, b]
-      LY[p, i] = (SS_n[p] > 0) ? tot / SS_n[p] * 100 : 0
+    run = 0
+    for (b = CTX_MAXBIN; b >= 0; b--) {
+      run += SS_pk_h[p, b]
+      if (b % 5 == 0) LY[p, b / 5 + 1] = (SS_n[p] > 0) ? run / SS_n[p] * 100 : 0
     }
   }
-  for (i = 1; i <= 20; i++) LXL[i] = kfmt((i - 1) * 50000)
-  line_chart("How large does a session's context get?", "Each session has one <b>peak context</b>: the biggest conversation it reached before it ended. Each point is the <b>% of sessions</b> whose peak falls in that 50k-token band. Sessions piling up near 1M are running into the context limit.", "Peak context of the session (tokens)", "% of sessions", 20, 2)
+  for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
+  line_chart("How large does a session's context get?", "Each session has one <b>peak context</b>: the biggest conversation it reached. For any size on the bottom axis, the line shows the <b>% of sessions that reached at least that size</b>. It starts at 100% and only falls; a line that stays high out to 1M means many sessions grow until they hit the context limit.", "Context size (tokens)", "% of sessions that reached it", 41, 4)
 
   # 4. Session length: share of sessions by number of API calls, 50-call bands
   for (p = 1; p <= nper; p++) {
