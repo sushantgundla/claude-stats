@@ -448,9 +448,9 @@ function sort_desc(arr, sorted,    i, j, n, tmp, k) {
 # ---- Readers: merge copies within a batch, then print one record per id ----
 # Same rules as the reducer: largest count per field, earliest timestamp wins.
 # Raw line counts inside the range go out on one "R" line for the uniqueness table.
-function emit_u(k, p, d, m, a, b, c, e, h, ep, sid, sd) {
+function emit_u(k, p, d, m, a, b, c, e, h, ep, sid, sd, cwd) {
   if (p > 0) r_u++
-  if (!(k in eu_ep) || ep < eu_ep[k]) { eu_ep[k] = ep; eu_p[k] = p; eu_d[k] = d; eu_m[k] = m; eu_s[k] = sid; eu_sd[k] = sd }
+  if (!(k in eu_ep) || ep < eu_ep[k]) { eu_ep[k] = ep; eu_p[k] = p; eu_d[k] = d; eu_m[k] = m; eu_s[k] = sid; eu_sd[k] = sd; sub(/^.*\//, "", cwd); eu_w[k] = cwd }
   if (a > eu_a[k]) eu_a[k] = a
   if (b > eu_b[k]) eu_b[k] = b
   if (c > eu_c[k]) eu_c[k] = c
@@ -471,7 +471,7 @@ function emit_c(uid, p, name, ep,    k) {
 
 function flush_emits(    k) {
   for (k in eu_ep)
-    print "U\t" k "\t" eu_p[k] "\t" eu_d[k] "\t" eu_m[k] "\t" eu_a[k] + 0 "\t" eu_b[k] + 0 "\t" eu_c[k] + 0 "\t" eu_e[k] + 0 "\t" eu_h[k] + 0 "\t" eu_ep[k] "\t" eu_s[k] "\t" eu_sd[k] + 0
+    print "U\t" k "\t" eu_p[k] "\t" eu_d[k] "\t" eu_m[k] "\t" eu_a[k] + 0 "\t" eu_b[k] + 0 "\t" eu_c[k] + 0 "\t" eu_e[k] + 0 "\t" eu_h[k] + 0 "\t" eu_ep[k] "\t" eu_s[k] "\t" eu_sd[k] + 0 "\t" eu_w[k]
   for (k in et_ep) print "T\t" k "\t" et_p[k] "\t" et_c[k] "\t" et_n[k] "\t" et_ep[k]
   for (k in ec_ep) print "C\t" k "\t" ec_p[k] "\t" ec_n[k] "\t" ec_ep[k]
   print "R\t" r_u + 0 "\t" r_t + 0 "\t" r_c + 0
@@ -731,6 +731,8 @@ BEGIN {
     f_uid = extract_str(fr, "uuid")
   } else if (substr(fr, 1, 13) == "\"sessionId\":\"") {
     f_sid = extract_str(fr, "sessionId")   # last one wins: the top-level key comes after the message
+  } else if (substr(fr, 1, 7) == "\"cwd\":\"") {
+    f_cwd = extract_str(fr, "cwd")          # last one wins, like the session id
   } else if (substr(fr, 1, 14) == "\"isSidechain\":") {
     if (f_side == "") f_side = (fr ~ /true/) ? 1 : 0
   } else if (substr(fr, 1, 20) == "\"content\":\"<command-") {
@@ -759,6 +761,7 @@ function flush(    ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
           if (t_name[i] ~ /^mcp__/) {
             split(t_name[i], mp, "__")
             emit_t(t_id[i], p, "mcp", mp[2], ep)
+            emit_t(t_id[i] ":m", p, "mcptool", mp[2] " › " substr(t_name[i], length("mcp__" mp[2] "__") + 1), ep)
           } else {
             emit_t(t_id[i], p, "tool", t_name[i], ep)
           }
@@ -772,12 +775,12 @@ function flush(    ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
           t1h = uv["ephemeral_1h_input_tokens"] + 0
           if (t1h > tcc) t1h = tcc
           if (tin + tout + tcc + tcr > 0)
-            emit_u((f_mid != "") ? f_mid : "unk_" wid ":" cur, p, d, f_model, tin, tout, tcc, tcr, t1h, ep, f_sid, f_side + 0)
+            emit_u((f_mid != "") ? f_mid : "unk_" wid ":" cur, p, d, f_model, tin, tout, tcc, tcr, t1h, ep, f_sid, f_side + 0, f_cwd)
         }
       }
     }
   }
-  f_model = f_mid = f_ts = f_uid = f_cmd = f_sid = f_side = ""
+  f_model = f_mid = f_ts = f_uid = f_cmd = f_sid = f_side = f_cwd = ""
   nt = 0; in_usage = 0
   delete uv
 }
@@ -792,7 +795,7 @@ FRAG_PROG="${COMMON_AWK}${FRAG_PROG_MAIN}"
 PERL_PROG='next unless index($_, q{"usage"}) >= 0 || index($_, q{"content":"<command-}) >= 0 || index($_, q{"role":"user","content":"/}) >= 0;
 next if index($_, q{"type":"tool_result"}) >= 0;
 $side = index($_, q{"isSidechain":true}) >= 0;
-while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"sessionId":"[^"]*"|"isSidechain":(?:true|false)|"content":"<command-[^"]*|"role":"user","content":"\/[A-Za-z][\w:-]*(?=[ ,"\\]))/g) { $f = $1; if ($f =~ /^"role"/) { next if $side; $f =~ s{^.*"content":"}{"content":"<command-name>}; } print "$.\t$f\n" }'
+while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"sessionId":"[^"]*"|"cwd":"[^"]*"|"isSidechain":(?:true|false)|"content":"<command-[^"]*|"role":"user","content":"\/[A-Za-z][\w:-]*(?=[ ,"\\]))/g) { $f = $1; if ($f =~ /^"role"/) { next if $side; $f =~ s{^.*"content":"}{"content":"<command-name>}; } print "$.\t$f\n" }'
 
 # Fallback reader (awk only): runs in parallel over batches of files and prints compact records
 IFS= read -r -d '' MAP_PROG_MAIN <<'AWK' || true
@@ -851,6 +854,7 @@ BEGIN {
     if (tname ~ /^mcp__/) {
       split(tname, mp, "__")
       emit_t(tid, p, "mcp", mp[2], ep)
+      emit_t(tid ":m", p, "mcptool", mp[2] " › " substr(tname, length("mcp__" mp[2] "__") + 1), ep)
     } else {
       emit_t(tid, p, "tool", tname, ep)
     }
@@ -887,7 +891,7 @@ BEGIN {
   dedup_key = (msg_id != "") ? msg_id : "unk_" wid ":" NR
 
   emit_u(dedup_key, p, cur_date, cur_model, cur_input, cur_output, cur_ccreate, cur_cread, cur_c1h, ep,
-         last_str($0, "sessionId"), (index($0, "\"isSidechain\":true") > 0) ? 1 : 0)
+         last_str($0, "sessionId"), (index($0, "\"isSidechain\":true") > 0) ? 1 : 0, last_str($0, "cwd"))
 }
 END { flush_emits() }
 AWK
@@ -949,6 +953,10 @@ BEGIN {
   cat_title["skill"] = "Skills";         cat_icon["skill"] = "🧩"
   cat_title["cmd"]   = "Slash commands"; cat_icon["cmd"]   = "⌨️ "
   cat_title["agent"] = "Subagents";      cat_icon["agent"] = "🤖"
+  # the HTML report also lists individual MCP tools and projects (the terminal keeps the first five)
+  nhcat = split("tool mcp mcptool skill cmd agent project", hcats, " ")
+  cat_title["mcptool"]  = "MCP tools";           cat_icon["mcptool"]  = "🔧"
+  cat_title["project"]  = "Projects (API calls)"; cat_icon["project"] = "📁"
 }
 
 # ---- Merge the records written by the parallel readers ----
@@ -961,7 +969,7 @@ $1 == "U" {
   k = $2
   if (!(k in dk_date) || $11 + 0 < dk_ep[k]) {
     dk_date[k] = $4; dk_model[k] = $5; dk_period[k] = $3 + 0; dk_ep[k] = $11 + 0
-    dk_sid[k] = $12; dk_side[k] = $13 + 0
+    dk_sid[k] = $12; dk_side[k] = $13 + 0; dk_cwd[k] = $14
   }
   if ($6 + 0 > dk_input[k])   dk_input[k]   = $6 + 0
   if ($7 + 0 > dk_output[k])  dk_output[k]  = $7 + 0
@@ -1090,6 +1098,10 @@ END {
     B_cost[bk]    += line_cost
     B_cost_p[bk, p] += line_cost
     B_calls[bk]++
+    bump("project", p, (dk_cwd[dk] != "") ? dk_cwd[dk] : "(unknown)")
+    lep = dk_ep[dk] + tz_off * 60
+    hh = int((lep % 86400) / 3600); wd = (int(lep / 86400) + 3) % 7   # 1970-01-01 was a Thursday; Monday = 0
+    TH_n[p, hh]++; TH_c[p, hh] += line_cost; TW_n[p, wd]++; TW_c[p, wd] += line_cost
     B_cr[bk] += cache_read
     B_in[bk] += input_tok + cache_create + cache_read
 
@@ -1351,6 +1363,7 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   o("--p1:#5b6cf0;--p2:#e08a2e;--p3:#1f9e8a;--p4:#c2527a;--p5:#8b5cf6;--k1:#6c7cf5;--k2:#e3a33b;--k3:#2eaf8f;--k4:#b8b4aa;--good:#23915a}")
   o("@media (prefers-color-scheme:dark){:root:not([data-theme='light']){--bg:#131311;--card:#1c1c19;--ink:#ecebe5;--muted:#9c9a91;--line:#2d2c28;--soft:#24231f}}")
   o(":root[data-theme='dark']{--bg:#131311;--card:#1c1c19;--ink:#ecebe5;--muted:#9c9a91;--line:#2d2c28;--soft:#24231f}")
+  o(":root{--ok:#1f8a52;--info:#2f6fd6;--bad:#d03b3b}@media (prefers-color-scheme:dark){:root:not([data-theme='light']){--ok:#4cc38a;--info:#6ea8ff;--bad:#ff6b6b}}:root[data-theme='dark']{--ok:#4cc38a;--info:#6ea8ff;--bad:#ff6b6b}")
   o("*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}")
   o(".wrap{max-width:1160px;margin:0 auto;padding:40px 16px 72px}")
   o("h1{font-size:30px;letter-spacing:-.02em;margin:0 0 6px}h2{font-size:19px;letter-spacing:-.01em;margin:0 0 14px}")
@@ -1380,14 +1393,14 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   o(".lk{display:inline-block;width:18px;height:0;border-top:2px solid var(--ink);opacity:.75;margin-right:7px;vertical-align:4px}")
   o("td small{display:block;color:var(--muted);font-size:12px;font-weight:400}td b{font-weight:650}")
   o(".tv{position:absolute;opacity:0;pointer-events:none}.tvl{display:inline-block;padding:7px 16px;border:1px solid var(--line);background:var(--card);color:var(--muted);cursor:pointer;font-size:14px;user-select:none}")
-  o(".tvl.l1{border-radius:10px 0 0 10px}.tvl.l2{border-radius:0 10px 10px 0;margin-left:-1px}.tv:checked+.tvl{background:var(--ink);color:var(--bg);border-color:var(--ink)}.tv:focus-visible+.tvl{outline:2px solid var(--p1);outline-offset:2px}")
-  o(".views{margin-top:16px}#tv1:checked~.views .by-period{display:none}#tv2:checked~.views .by-item{display:none}")
+  o(".tvl.lm{border-radius:0;margin-left:-1px}.tvl.l1{border-radius:10px 0 0 10px}.tvl.l2{border-radius:0 10px 10px 0;margin-left:-1px}.tv:checked+.tvl{background:var(--ink);color:var(--bg);border-color:var(--ink)}.tv:focus-visible+.tvl{outline:2px solid var(--p1);outline-offset:2px}")
+  o(".views{margin-top:16px}.views .by-item,.views .by-period,.views .by-time{display:none}#tv1:checked~.views .by-item{display:grid}#tv2:checked~.views .by-period{display:block}#tv3:checked~.views .by-time{display:block}")
   o(".pcard{margin-bottom:16px}.pgrid{display:grid;gap:18px 24px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:12px}")
   o(".pgrid h3{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}")
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".mini i{display:block;height:4px;border-radius:2px;margin-top:4px}")
   o(".top small.sh{color:var(--muted);font-weight:400;font-size:12px;margin-left:4px}.top small.tr{color:var(--muted);font-size:11px;margin-left:8px;font-weight:400}.top small.tr.new{color:var(--good);font-weight:600}")
-  o(".st{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;font:700 10px/1 -apple-system,sans-serif;font-style:normal;color:#fff;margin-left:8px;vertical-align:1px;cursor:help}.st.g{background:#23915a}.st.b{background:#3b82f6}.st.r{background:#d64545}")
+  o(".sv{font-weight:600;cursor:help}.sv.g{color:var(--ok)}.sv.b{color:var(--info)}.sv.r{color:var(--bad)}")
   o("h3.ch{font-size:15px;margin:26px 0 4px}p.cd{margin:0 0 10px;max-width:900px}")
   o("summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0 0 14px;user-select:none}summary::-webkit-details-marker{display:none}")
   o("summary::before{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex:none}details[open]>summary::before{transform:rotate(45deg)}details:not([open])>summary{margin-bottom:0}summary:focus-visible{outline:2px solid var(--p1);outline-offset:4px;border-radius:4px}")
@@ -1413,10 +1426,8 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   }
   o("</div></section>")
 
-  write_models()
-
   # --- Comparison table ---
-  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached). The small colored marks show how each number looks: a green ✓ is healthy, a blue i is worth a look, a red ! needs attention. Hover a mark to see why.</p><div class='card tw'><table><thead><tr><th></th>")
+  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached). Some numbers are colored: <span class='sv g'>green</span> is healthy, <span class='sv b'>blue</span> is worth a look, <span class='sv r'>red</span> means something is wrong. Hover a colored number to see why.</p><div class='card tw'><table><thead><tr><th></th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(P_calls[p]);                                             hrow("API calls", v, "")
@@ -1424,14 +1435,18 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cr[p]) " · " money(P_ccr[p]);                   hrow("Cache read (hit)", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw5[p]);                                        hrow("Cache write, 5 min", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw1h[p]);                                       hrow("Cache write, 1 hour", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw5[p] + P_cw1h[p]) " · " money(P_ccw[p]) dot(lvl_lo(sh = pcts(P_cw5[p] + P_cw1h[p], tin_of(p)), 3, 8), sprintf("%.1f%% of input tokens were cache writes. Under 3%% is healthy, over 8%% needs attention.", sh));      hrow("Cache writes (miss)", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_in[p]) " · " money(P_cin[p]) dot(lvl_lo(sh = pcts(P_in[p], tin_of(p)), 0.5, 2), sprintf("%.2f%% of input tokens were not cached. Under 0.5%% is healthy, over 2%% needs attention.", sh));                   hrow("Not cached (miss)", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = pct(P_cr[p], tin_of(p)) dot(lvl_hi(sh = pcts(P_cr[p], tin_of(p)), 95, 90), sprintf("%.1f%% of input tokens were cache reads. 95%% or more is healthy, under 90%% needs attention.", sh));         hrow("Cache hit rate", v, "sub")
+  for (p = 1; p <= nper; p++) { sh = pcts(P_cw5[p] + P_cw1h[p], tin_of(p)); v[p] = paint(lvl_lo(sh, 3, 8), format_tokens(P_cw5[p] + P_cw1h[p]) " · " money(P_ccw[p]), sprintf("%.1f%% of input tokens were cache writes. Under 3%% is healthy, over 8%% needs attention.", sh)) };  hrow("Cache writes (miss)", v, "sub")
+  for (p = 1; p <= nper; p++) { sh = pcts(P_in[p], tin_of(p)); v[p] = paint(lvl_lo(sh, 0.5, 2), format_tokens(P_in[p]) " · " money(P_cin[p]), sprintf("%.2f%% of input tokens were not cached. Under 0.5%% is healthy, over 2%% needs attention.", sh)) };  hrow("Not cached (miss)", v, "sub")
+  for (p = 1; p <= nper; p++) { sh = pcts(P_cr[p], tin_of(p)); v[p] = paint(lvl_hi(sh, 95, 90), pct(P_cr[p], tin_of(p)), sprintf("%.1f%% of input tokens were cache reads. 95%% or more is healthy, under 90%% needs attention.", sh)) };  hrow("Cache hit rate", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_out[p]) " · " money(P_cout[p]);                 hrow("Output tokens", v, "")
-  for (p = 1; p <= nper; p++) v[p] = money(P_cost[p]) ((p > 1 && pe[p] <= now && P_cost[p - 1] > 0) ? dot(lvl_lo(sh = (P_cost[p] / P_cost[p - 1] - 1) * 100, 10.0001, 30), sprintf("%+.0f%% vs %s. Flat, or up to 10%%, is fine; up 10%% to 30%% is worth a look; up over 30%% needs attention.", sh, plab[p - 1])) : "");                                               hrow("Est. API cost", v, "tot")
+  for (p = 1; p <= nper; p++) {
+    if (p > 1 && pe[p] <= now && P_cost[p - 1] > 0) { sh = (P_cost[p] / P_cost[p - 1] - 1) * 100; v[p] = paint(lvl_lo(sh, 10.0001, 30), money(P_cost[p]), sprintf("%+.0f%% vs %s. Flat, or up to 10%%, is fine; up 10%% to 30%% is worth a look; up over 30%% needs attention.", sh, plab[p - 1])) }
+    else v[p] = money(P_cost[p])
+  }
+  hrow("Est. API cost", v, "tot")
   for (p = 1; p <= nper; p++) v[p] = money(P_nc[p]);                                                 hrow("Cost with no cache", v, "")
-  for (ci = 1; ci <= ncat; ci++) {
-    cat = cats[ci]
+  for (ci = 1; ci <= nhcat; ci++) {
+    cat = hcats[ci]
     o("<tr><td>Top " tolower(cat_title[cat]) "</td>")
     for (p = 1; p <= nper; p++) o("<td class='list'>" top_inline(cat, p, 5) "</td>")
     o("</tr>")
@@ -1460,8 +1475,9 @@ function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days,
   o("</div></details></section>")
 
   write_cache()
-  write_chart()
   write_context()
+  write_models()
+  write_chart()
   write_top()
 
   # --- Notes ---
@@ -1507,7 +1523,7 @@ function write_cache(    lo, hi, p, tin, w, j, kn, kc, kf, kv, nb, bk, i, k, r, 
     W = 1100; H = 300; L = 70; R = 24; T = 16; B = 44
     pw = W - L - R; ph = H - T - B; slot = pw / nb
     o("<h3 class='ch'>How well did the cache hold up each " unit_word(bucket_unit) "?</h3>")
-    o("<p class='note cd'>The <b>cache hit rate</b> is the share of tokens that were read from cache. Higher is better. A dip means the stored conversation had gone cold (you were idle for a while, started a new session or cleared the chat), so it had to be stored again at a higher price. The axis starts at " ymin "%, not at zero, so small dips are easy to see. The colors match the marks in the table: green is 95% or more, blue is 90% to 95%, red is under 90%.</p>")
+    o("<p class='note cd'>The <b>cache hit rate</b> is the share of tokens that were read from cache. Higher is better. A dip means the stored conversation had gone cold (you were idle for a while, started a new session or cleared the chat), so it had to be stored again at a higher price. The axis starts at " ymin "%, not at zero, so small dips are easy to see. The colors match the numbers in the table: green is 95% or more, blue is 90% to 95%, red is under 90%.</p>")
     o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Cache hit rate per " unit_word(bucket_unit) "'>")
     for (g = 0; g <= 4; g++) {
       y = T + ph - ph * g / 4
@@ -1743,7 +1759,11 @@ function write_context(    sh, p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y,
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(CT_n[p] + 0);                                                   hrow("Main-thread API calls", v, "")
-  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_sum[p] / CT_n[p]) dot(lvl_lo(sh = share_over(p, 40), 25, 50), sprintf("%.0f%% of calls had over 200k tokens of context. Under 25%% is healthy, over 50%% needs attention (bigger conversations cost more on every call).", sh)) : "–";                    hrow("Context per call, average", v, "tot")
+  for (p = 1; p <= nper; p++) {
+    if (CT_n[p] > 0) { sh = share_over(p, 40); v[p] = paint(lvl_lo(sh, 25, 50), ctxfmt(CT_sum[p] / CT_n[p]), sprintf("%.0f%% of calls had over 200k tokens of context. Under 25%% is healthy, over 50%% needs attention (bigger conversations cost more on every call).", sh)) }
+    else v[p] = "–"
+  }
+  hrow("Context per call, average", v, "tot")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.5, CTX_BIN)) : "–";  hrow("Median (50th percentile)", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.95, CTX_BIN)) : "–"; hrow("95th percentile", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_max[p]) : "–";                               hrow("Largest", v, "sub")
@@ -1865,8 +1885,8 @@ function write_context(    sh, p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y,
   o("</div></details></section>")
 }
 
-# Status dot: g = healthy, b = worth a look, r = needs attention. Shape as well as color (check, i, !).
-function dot(l, tip) { return "<i class='st " l "' title='" hesc(tip) "'>" ((l == "g") ? "✓" : (l == "b") ? "i" : "!") "</i>" }
+# Status color for a number: g = healthy, b = worth a look, r = needs attention (hover shows why)
+function paint(l, text, tip) { return "<span class='sv " l "' title='" hesc(tip) "'>" text "</span>" }
 function lvl_hi(x, g, b) { return (x >= g) ? "g" : (x >= b) ? "b" : "r" }   # higher is better
 function lvl_lo(x, g, b) { return (x < g) ? "g" : (x <= b) ? "b" : "r" }    # lower is better
 function pcts(a, b) { return (b > 0) ? a / b * 100 : 0 }
@@ -1905,7 +1925,7 @@ function write_model_chart(    n, ord, i, p, j, mk, mc, fg, nm, names, c, other,
 # --- Models: one row per model, one column per period ---
 function write_models(    n, ord, i, p, mk, c) {
   n = sort_desc(mod_cost, ord)
-  o("<section><details open><summary>Models</summary><p class='note cd'>Which models your money went to. Each bar is 100% of that period's cost, so a shift between colors from one period to the next shows a change in which model you lean on. A pricier model (such as Opus) costs more for the same work than a cheaper one (such as Sonnet or Haiku). The table below gives the dollars and calls for each model. A red ! marks a model with no known price, which was costed at a default price.</p>")
+  o("<section><details open><summary>Models</summary><p class='note cd'>Which models your money went to. Each bar is 100% of that period's cost, so a shift between colors from one period to the next shows a change in which model you lean on. A pricier model (such as Opus) costs more for the same work than a cheaper one (such as Sonnet or Haiku). The table below gives the dollars and calls for each model. A model name in red has no known price, so it was costed at a default price.</p>")
   write_model_chart()
   o("<div class='card tw'><table><thead><tr><th>Model</th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
@@ -1913,7 +1933,7 @@ function write_models(    n, ord, i, p, mk, c) {
   o("</tr></thead><tbody>")
   for (i = 1; i <= n; i++) {
     mk = ord[i]
-    o("<tr><td>" hesc(mk) ((mk in unpriced) ? dot("r", "No price found for this model, so it was costed at the default Sonnet rates") : "") "</td>")
+    o("<tr><td>" ((mk in unpriced) ? paint("r", hesc(mk), "No price found for this model, so it was costed at the default Sonnet rates") : hesc(mk)) "</td>")
     for (p = 1; p <= nper; p++) {
       c = PM_cost[p, mk] + 0
       if (PM_calls[p, mk] + 0 == 0) o("<td><small>–</small></td>")
@@ -1942,15 +1962,14 @@ function period_list(cat, p, keys, vals,    k, kp, n) {
 
 # --- Top lists: by item (bars per period) or by period (lists per period) ---
 function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
-  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, skills, slash commands and helper agents (subagents) you used most. Each number is how many times it was used, with its share of that list. The small note next to a name shows how use changed in the last finished period compared with the one before it (new, or up or down by more than 10%). A period still in progress is left out of that comparison.</p>")
-  if (nper > 1) {
-    o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
-    o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl l2'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
-  }
+  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, individual MCP tools, skills, slash commands, helper agents (subagents) and projects you used most. Each number is how many times it was used (for projects, how many API calls), with its share of that list. \"By item\" ranks them, " ((nper > 1) ? "\"By " ((compare_unit != "") ? compare_unit : "period") "\" lists the top items in each period, and " : "") "\"By time of use\" shows when you work. The small note next to a name shows how use changed in the last finished period compared with the one before it (new, or up or down by more than 10%). A period still in progress is left out of that comparison.</p>")
+  o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
+  if (nper > 1) o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl lm'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
+  o("<input type='radio' name='tv' id='tv3' class='tv'><label for='tv3' class='tvl l2'>By time of use</label>")
   tl = (pe[nper] > now) ? nper - 1 : nper   # trend compares the last finished period with the one before it
   o("<div class='views'><div class='by-item grid'>")
-  for (ci = 1; ci <= ncat; ci++) {
-    cat = cats[ci]
+  for (ci = 1; ci <= nhcat; ci++) {
+    cat = hcats[ci]
     delete tot; delete ord
     n = cat_totals(cat, tot)
     o("<div class='card'><div class='kh' style='margin-bottom:6px'>" cat_title[cat] "</div>")
@@ -1989,8 +2008,8 @@ function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, k
     o("<div class='by-period'>")
     for (p = 1; p <= nper; p++) {
       o("<div class='card pcard'><div class='kh'><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</div><div class='kl' style='margin-bottom:0'>" hesc(plong[p]) "</div><div class='pgrid'>")
-      for (ci = 1; ci <= ncat; ci++) {
-        cat = cats[ci]
+      for (ci = 1; ci <= nhcat; ci++) {
+        cat = hcats[ci]
         n = period_list(cat, p, keys, vals)
         o("<div><h3>" cat_title[cat] "</h3>")
         if (n == 0) { o("<p class='note' style='margin:0'>None</p></div>"); continue }
@@ -2009,7 +2028,60 @@ function write_top(    tl, trend, a0, a1, ci, cat, tot, ord, n, lim, mx, i, p, k
     }
     o("</div>")
   }
+  o("<div class='by-time'>")
+  write_time_view()
+  o("</div>")
   o("</div></details></section>")
+}
+
+# --- When you use it: API calls by hour of the day and by day of the week, stacked by period ---
+function time_chart(title, desc, n, lab, isday, tick,    p, i, W, H, L, R, T, B, pw, ph, slot, bw, maxn, yn, g, y, x, h, c, tip, tot, cost) {
+  maxn = 0
+  for (i = 1; i <= n; i++) {
+    tot = 0
+    for (p = 1; p <= nper; p++) tot += (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0
+    if (tot > maxn) maxn = tot
+  }
+  if (maxn == 0) return
+  yn = nice_max(maxn)
+  W = 1100; H = 260; L = 70; R = 24; T = 12; B = 34
+  pw = W - L - R; ph = H - T - B; slot = pw / n; bw = slot * 0.72
+  o("<h3 class='ch'>" title "</h3><p class='note cd'>" desc "</p>")
+  if (nper > 1) {
+    o("<div class='keys'>")
+    for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
+    o("</div>")
+  }
+  o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='" hesc(title) "'>")
+  for (g = 0; g <= 4; g++) {
+    y = T + ph - ph * g / 4
+    o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
+    o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" format_tokens(yn * g / 4) "</text>")
+  }
+  for (i = 1; i <= n; i++) {
+    x = L + slot * (i - 1) + (slot - bw) / 2
+    tip = lab[i] ":"; tot = 0; cost = 0
+    for (p = 1; p <= nper; p++) { tot += (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0; cost += (isday ? TW_c[p, i - 1] : TH_c[p, i - 1]) + 0 }
+    tip = tip " " commas(tot) " calls · " money(cost)
+    o("<g><title>" hesc(tip) "</title><rect class='hit' x='" sprintf("%.1f", L + slot * (i - 1)) "' y='" T "' width='" sprintf("%.2f", slot) "' height='" ph "'/>")
+    y = T + ph
+    for (p = 1; p <= nper; p++) {
+      c = (isday ? TW_n[p, i - 1] : TH_n[p, i - 1]) + 0
+      if (c <= 0) continue
+      h = c / yn * ph; y -= h
+      o("<rect x='" sprintf("%.1f", x) "' y='" sprintf("%.1f", y) "' width='" sprintf("%.2f", bw) "' height='" sprintf("%.2f", h) "' rx='1' fill='" pcolor(p) "'/>")
+    }
+    o("</g>")
+    if ((i - 1) % tick == 0) o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 20) "' text-anchor='middle'>" lab[i] "</text>")
+  }
+  o("</svg></div>")
+}
+
+function write_time_view(    i, lab) {
+  for (i = 1; i <= 24; i++) lab[i] = sprintf("%02d", i - 1)
+  time_chart("API calls by hour of the day", "How many API calls you made in each hour of the day (your local time, 24-hour clock). Tall bars are your busiest hours. Hover a bar for the cost.", 24, lab, 0, 2)
+  split("Mon Tue Wed Thu Fri Sat Sun", lab, " ")
+  time_chart("API calls by day of the week", "How many API calls you made on each day of the week, over all the periods shown. Hover a bar for the cost.", 7, lab, 1, 1)
 }
 
 function hrow(label, vals, cls,    p) {
