@@ -448,9 +448,9 @@ function sort_desc(arr, sorted,    i, j, n, tmp, k) {
 # ---- Readers: merge copies within a batch, then print one record per id ----
 # Same rules as the reducer: largest count per field, earliest timestamp wins.
 # Raw line counts inside the range go out on one "R" line for the uniqueness table.
-function emit_u(k, p, d, m, a, b, c, e, h, ep) {
+function emit_u(k, p, d, m, a, b, c, e, h, ep, sid, sd) {
   if (p > 0) r_u++
-  if (!(k in eu_ep) || ep < eu_ep[k]) { eu_ep[k] = ep; eu_p[k] = p; eu_d[k] = d; eu_m[k] = m }
+  if (!(k in eu_ep) || ep < eu_ep[k]) { eu_ep[k] = ep; eu_p[k] = p; eu_d[k] = d; eu_m[k] = m; eu_s[k] = sid; eu_sd[k] = sd }
   if (a > eu_a[k]) eu_a[k] = a
   if (b > eu_b[k]) eu_b[k] = b
   if (c > eu_c[k]) eu_c[k] = c
@@ -471,7 +471,7 @@ function emit_c(uid, p, name, ep,    k) {
 
 function flush_emits(    k) {
   for (k in eu_ep)
-    print "U\t" k "\t" eu_p[k] "\t" eu_d[k] "\t" eu_m[k] "\t" eu_a[k] + 0 "\t" eu_b[k] + 0 "\t" eu_c[k] + 0 "\t" eu_e[k] + 0 "\t" eu_h[k] + 0 "\t" eu_ep[k]
+    print "U\t" k "\t" eu_p[k] "\t" eu_d[k] "\t" eu_m[k] "\t" eu_a[k] + 0 "\t" eu_b[k] + 0 "\t" eu_c[k] + 0 "\t" eu_e[k] + 0 "\t" eu_h[k] + 0 "\t" eu_ep[k] "\t" eu_s[k] "\t" eu_sd[k] + 0
   for (k in et_ep) print "T\t" k "\t" et_p[k] "\t" et_c[k] "\t" et_n[k] "\t" et_ep[k]
   for (k in ec_ep) print "C\t" k "\t" ec_p[k] "\t" ec_n[k] "\t" ec_ep[k]
   print "R\t" r_u + 0 "\t" r_t + 0 "\t" r_c + 0
@@ -729,6 +729,10 @@ BEGIN {
     f_ts = extract_str(fr, "timestamp")
   } else if (substr(fr, 1, 7) == "\"uuid\":") {
     f_uid = extract_str(fr, "uuid")
+  } else if (substr(fr, 1, 13) == "\"sessionId\":\"") {
+    f_sid = extract_str(fr, "sessionId")   # last one wins: the top-level key comes after the message
+  } else if (substr(fr, 1, 14) == "\"isSidechain\":") {
+    if (f_side == "") f_side = (fr ~ /true/) ? 1 : 0
   } else if (substr(fr, 1, 20) == "\"content\":\"<command-") {
     f_cmd = fr
   } else if (in_usage) {
@@ -768,12 +772,12 @@ function flush(    ep, p, d, i, mp, name, tin, tout, tcc, tcr, t1h) {
           t1h = uv["ephemeral_1h_input_tokens"] + 0
           if (t1h > tcc) t1h = tcc
           if (tin + tout + tcc + tcr > 0)
-            emit_u((f_mid != "") ? f_mid : "unk_" wid ":" cur, p, d, f_model, tin, tout, tcc, tcr, t1h, ep)
+            emit_u((f_mid != "") ? f_mid : "unk_" wid ":" cur, p, d, f_model, tin, tout, tcc, tcr, t1h, ep, f_sid, f_side + 0)
         }
       }
     }
   }
-  f_model = f_mid = f_ts = f_uid = f_cmd = ""
+  f_model = f_mid = f_ts = f_uid = f_cmd = f_sid = f_side = ""
   nt = 0; in_usage = 0
   delete uv
 }
@@ -782,8 +786,13 @@ FRAG_PROG="${COMMON_AWK}${FRAG_PROG_MAIN}"
 
 # perl extractor: one "<line>\t<fragment>" per field, only on lines awk needs.
 # Escaped JSON inside message text (\"usage\") never matches these patterns.
-PERL_PROG='next unless index($_, q{"usage"}) >= 0 || index($_, q{"content":"<command-}) >= 0;
-while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"content":"<command-[^"]*)/g) { print "$.\t$1\n" }'
+# Slash commands come in two shapes: <command-...> tags, or plain text "/name ..." typed by the
+# user (skipped in subagent prompts, and when followed by "/", as in file paths). Plain ones are
+# rewritten to the tag shape so the awk side sees one thing. Tool results that merely show a tag are skipped.
+PERL_PROG='next unless index($_, q{"usage"}) >= 0 || index($_, q{"content":"<command-}) >= 0 || index($_, q{"role":"user","content":"/}) >= 0;
+next if index($_, q{"type":"tool_result"}) >= 0;
+$side = index($_, q{"isSidechain":true}) >= 0;
+while (/("model":"[^"]*"(?:,"id":"[^"]*")?|"message":\{"id":"[^"]*"|"type":"tool_use","id":"[^"]*","name":"[^"]*"|"(?:skill|subagent_type)":"[^"]*"|"usage":\{|"(?:input_tokens|output_tokens|cache_creation_input_tokens|cache_read_input_tokens|ephemeral_1h_input_tokens)":[0-9]+|"timestamp":"[^"]*"|"uuid":"[^"]*"|"sessionId":"[^"]*"|"isSidechain":(?:true|false)|"content":"<command-[^"]*|"role":"user","content":"\/[A-Za-z][\w:-]*(?=[ ,"\\]))/g) { $f = $1; if ($f =~ /^"role"/) { next if $side; $f =~ s{^.*"content":"}{"content":"<command-name>}; } print "$.\t$f\n" }'
 
 # Fallback reader (awk only): runs in parallel over batches of files and prints compact records
 IFS= read -r -d '' MAP_PROG_MAIN <<'AWK' || true
@@ -808,13 +817,22 @@ BEGIN {
   cur_date = local_date(ep)
 
   # ---- Slash commands the user typed ----
-  # Logged as "<command-name>…" or, for skill commands, "<command-message>…<command-name>…"
+  # Logged as "<command-name>…" or, for skill commands, "<command-message>…<command-name>…",
+  # or as plain text "/name …" (not in subagent prompts, and not a path like /tmp/x).
+  # A tool result that merely shows a tag is not a command.
+  if (index($0, "\"type\":\"tool_result\"") > 0) next
   if (index($0, "\"content\":\"<command-") > 0) {
     if (match($0, /<command-name>[^<]*</)) {
       cname = substr($0, RSTART + 14, RLENGTH - 15)
       sub(/^\//, "", cname)
       emit_c(last_str($0, "uuid"), p, "/" cname, ep)
     }
+    next
+  }
+  if (index($0, "\"role\":\"user\",\"content\":\"/") > 0 && index($0, "\"isSidechain\":true") == 0 &&
+      match($0, /"role":"user","content":"\/[A-Za-z][A-Za-z0-9_:-]*[ ,"\\]/)) {
+    cname = substr($0, RSTART + 26, RLENGTH - 27)
+    emit_c(last_str($0, "uuid"), p, "/" cname, ep)
     next
   }
 
@@ -868,7 +886,8 @@ BEGIN {
   msg_id = extract_str($0, "id")
   dedup_key = (msg_id != "") ? msg_id : "unk_" wid ":" NR
 
-  emit_u(dedup_key, p, cur_date, cur_model, cur_input, cur_output, cur_ccreate, cur_cread, cur_c1h, ep)
+  emit_u(dedup_key, p, cur_date, cur_model, cur_input, cur_output, cur_ccreate, cur_cread, cur_c1h, ep,
+         last_str($0, "sessionId"), (index($0, "\"isSidechain\":true") > 0) ? 1 : 0)
 }
 END { flush_emits() }
 AWK
@@ -942,6 +961,7 @@ $1 == "U" {
   k = $2
   if (!(k in dk_date) || $11 + 0 < dk_ep[k]) {
     dk_date[k] = $4; dk_model[k] = $5; dk_period[k] = $3 + 0; dk_ep[k] = $11 + 0
+    dk_sid[k] = $12; dk_side[k] = $13 + 0
   }
   if ($6 + 0 > dk_input[k])   dk_input[k]   = $6 + 0
   if ($7 + 0 > dk_output[k])  dk_output[k]  = $7 + 0
@@ -976,6 +996,7 @@ END {
   }
   for (k in c_ep) { if (c_p[k] == 0) continue; bump("cmd", c_p[k], c_name[k]); uniq_c++ }
   for (k in dk_date) { if (dk_period[k] == 0) delete dk_date[k]; else uniq_u++ }
+  analyze_context()
 
   # ---- Chart step: given, or picked from the span of the data ----
   min_ep = 0; max_ep = 0
@@ -1363,6 +1384,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o(".pgrid h3{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}")
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".mini i{display:block;height:4px;border-radius:2px;margin-top:4px}")
+  o("h3.ch{font-size:15px;margin:26px 0 4px}p.cd{margin:0 0 10px;max-width:900px}")
   o("</style></head><body><div class='wrap'>")
 
   # --- Header ---
@@ -1427,6 +1449,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o("</div></section>")
 
   write_chart()
+  write_context()
   write_models()
   write_top()
 
@@ -1505,6 +1528,265 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
       o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" hesc(bucket_tick(bk[i], bucket_unit)) "</text>")
   }
   o("</svg></div></div></section>")
+}
+
+# --- Context size ---
+# One API call re-sends the whole conversation, so its context is input + cache write + cache read.
+# Main conversation only (subagents start small and would pull the numbers down); they get their own row.
+# Percentiles come from fixed-width bins (CTX_BIN tokens) instead of a sort: exact to one bin, and fast.
+function ctx_bin(x,    b) { b = int(x / CTX_BIN); return (b > CTX_MAXBIN) ? CTX_MAXBIN : b }
+
+# q-quantile of hist[key, 0..maxb] holding `total` values; the middle of the bin it falls in
+function hist_pct(hist, key, maxb, total, q, width,    b, run, need) {
+  need = total * q; run = 0
+  for (b = 0; b <= maxb; b++) {
+    run += hist[key, b]
+    if (run > 0 && run >= need) return (b + 0.5) * width
+  }
+  return 0
+}
+
+# shell sort of one session's calls by time (the readers give them in no order)
+function sess_sort(s, n,    gap, i, j, te, tc, tp) {
+  for (gap = int(n / 2); gap > 0; gap = int(gap / 2))
+    for (i = gap + 1; i <= n; i++) {
+      te = se[s, i]; tc = sc[s, i]; tp = sp[s, i]
+      for (j = i; j > gap && se[s, j - gap] > te; j -= gap) {
+        se[s, j] = se[s, j - gap]; sc[s, j] = sc[s, j - gap]; sp[s, j] = sp[s, j - gap]
+      }
+      se[s, j] = te; sc[s, j] = tc; sp[s, j] = tp
+    }
+}
+
+function analyze_context(    k, s, n, j, p, x, b, ctx, pk, nc, sp1, sn, sids, ns) {
+  CTX_BIN = 5000; CTX_MAXBIN = 260       # up to 1.3M tokens
+  CTX_MAXIDX = 400; CTX_MINSESS = 5      # chart: call numbers 1..400, while at least 5 sessions get that far
+  CALL_CAP = 3000
+  for (k in dk_ep) {
+    ctx = dk_input[k] + dk_ccreate[k] + dk_cread[k]
+    p = dk_period[k]
+    if (dk_side[k]) {
+      if (p > 0) { SA_n[p]++; SA_sum[p] += ctx; SA_h[p, ctx_bin(ctx)]++ }
+      continue
+    }
+    if (dk_sid[k] == "") {
+      if (p > 0) note_call(p, ctx)
+      continue
+    }
+    sn[dk_sid[k]]++
+    se[dk_sid[k], sn[dk_sid[k]]] = dk_ep[k]; sc[dk_sid[k], sn[dk_sid[k]]] = ctx; sp[dk_sid[k], sn[dk_sid[k]]] = p
+  }
+  for (s in sn) {
+    n = sn[s]
+    sess_sort(s, n)
+    nc = 0; pk = 0; sp1 = 0
+    for (j = 1; j <= n; j++) {
+      p = sp[s, j]
+      if (p == 0) continue
+      ctx = sc[s, j]
+      note_call(p, ctx)
+      if (sp1 == 0) sp1 = p
+      nc++
+      if (ctx > pk) pk = ctx
+      if (j <= CTX_MAXIDX) { IX_n[j]++; IX_sum[j] += ctx; IX_h[j, ctx_bin(ctx)]++ }
+    }
+    if (nc > 0) {
+      SS_n[sp1]++; SS_calls_sum[sp1] += nc; SS_calls_h[sp1, (nc > CALL_CAP) ? CALL_CAP : nc]++
+      SS_pk_sum[sp1] += pk; SS_pk_h[sp1, ctx_bin(pk)]++
+    }
+  }
+  ix_max = 0
+  for (j = 1; j <= CTX_MAXIDX; j++) { if (IX_n[j] < CTX_MINSESS) break; ix_max = j }
+}
+
+function note_call(p, ctx,    b) {
+  CT_n[p]++; CT_sum[p] += ctx; CT_h[p, ctx_bin(ctx)]++
+  if (ctx > CT_max[p]) CT_max[p] = ctx
+}
+
+# "12.3k" style, from format_tokens, for a tokens value
+function ctxfmt(x) { return format_tokens(x) }
+
+# "250k", "1M" for axis labels
+function kfmt(x) { return (x >= 1000000) ? sprintf("%gM", x / 1000000) : sprintf("%gk", x / 1000) }
+
+# Line chart, one line per period. LY[p, i] = y in %, LXL[i] = label of point i, n points, an axis label every tk points.
+function line_chart(title, desc, xtitle, ytitle, n, tk,    p, i, W, H, L, R, T, B, pw, ph, ymax, g, y, x, pts, tip, hw, cnt) {
+  ymax = 0; cnt = 0
+  for (p = 1; p <= nper; p++) if (LOK[p]) { cnt++; for (i = 1; i <= n; i++) if (LY[p, i] > ymax) ymax = LY[p, i] }
+  if (cnt == 0 || ymax <= 0) return
+  ymax = nice_max(ymax)
+  W = 1100; H = 320; L = 70; R = 24; T = 16; B = 50
+  pw = W - L - R; ph = H - T - B; hw = pw / (n - 1)
+  o("<h3 class='ch'>" hesc(title) "</h3><p class='note cd'>" desc "</p>")
+  if (nper > 1) {
+    o("<div class='keys'>")
+    for (p = 1; p <= nper; p++) if (LOK[p]) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
+    o("</div>")
+  }
+  o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='" hesc(title) "'>")
+  for (g = 0; g <= 4; g++) {
+    y = T + ph - ph * g / 4
+    o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
+    o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" sprintf("%g", ymax * g / 4) "%</text>")
+  }
+  for (i = 1; i <= n; i += tk)
+    o("<text x='" sprintf("%.1f", L + hw * (i - 1)) "' y='" (H - B + 20) "' text-anchor='middle'>" LXL[i] "</text>")
+  o("<text x='" (L + pw / 2) "' y='" (H - 8) "' text-anchor='middle'>" xtitle "</text>")
+  o("<text x='14' y='" (T + ph / 2) "' text-anchor='middle' transform='rotate(-90 14 " (T + ph / 2) ")'>" ytitle "</text>")
+  for (p = 1; p <= nper; p++) {
+    if (!LOK[p]) continue
+    pts = ""
+    for (i = 1; i <= n; i++) pts = pts sprintf("%.1f,%.1f ", L + hw * (i - 1), T + ph - LY[p, i] / ymax * ph)
+    o("<polyline class='ln' style='stroke:" pcolor(p) "' points='" pts "'/>")
+    if (n <= 25) for (i = 1; i <= n; i++)
+      o("<circle cx='" sprintf("%.1f", L + hw * (i - 1)) "' cy='" sprintf("%.1f", T + ph - LY[p, i] / ymax * ph) "' r='3' fill='" pcolor(p) "'/>")
+  }
+  for (i = 1; i <= n; i++) {
+    tip = LXL[i] ":"
+    for (p = 1; p <= nper; p++) if (LOK[p]) tip = tip " " ((nper > 1) ? plab[p] " " : "") sprintf("%.1f%%", LY[p, i]) ((p < nper) ? " ·" : "")
+    o("<g><title>" hesc(tip) "</title><rect class='hit' x='" sprintf("%.1f", L + hw * (i - 1) - hw / 2) "' y='" T "' width='" sprintf("%.2f", hw) "' height='" ph "'/></g>")
+  }
+  o("</svg></div>")
+}
+
+function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kname, tot, run, b, lab) {
+  o("<section><h2>Context size</h2><div class='card'>")
+  o("<p class='note' style='margin:0 0 14px'>Every API call re-sends the whole conversation, so its size is the <b>context</b>: input + cache write + cache read tokens. It is counted per API call, not per typed prompt: one prompt can trigger many calls (tool loops), each with its own context. Main conversation only; subagents are on their own row.</p>")
+  # per-period table
+  o("<div class='tw'><table><thead><tr><th></th>")
+  for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
+  o("</tr></thead><tbody>")
+  for (p = 1; p <= nper; p++) v[p] = commas(CT_n[p] + 0);                                                   hrow("Main-thread API calls", v, "")
+  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_sum[p] / CT_n[p]) : "–";                    hrow("Context per call, average", v, "tot")
+  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.5, CTX_BIN)) : "–";  hrow("Median (50th percentile)", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.95, CTX_BIN)) : "–"; hrow("95th percentile", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_max[p]) : "–";                               hrow("Largest", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = commas(SS_n[p] + 0);                                                   hrow("Sessions", v, "")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? sprintf("%.0f", SS_calls_sum[p] / SS_n[p]) : "–";     hrow("API calls per session, average", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? sprintf("%.0f", hist_pct(SS_calls_h, p, CALL_CAP, SS_n[p], 0.5, 1) - 0.5) : "–"; hrow("Median", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? sprintf("%.0f", hist_pct(SS_calls_h, p, CALL_CAP, SS_n[p], 0.95, 1) - 0.5) : "–"; hrow("95th percentile", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? ctxfmt(SS_pk_sum[p] / SS_n[p]) : "–";                  hrow("Peak context per session, average", v, "")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? ctxfmt(hist_pct(SS_pk_h, p, CTX_MAXBIN, SS_n[p], 0.5, CTX_BIN)) : "–"; hrow("Median", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (SS_n[p] > 0) ? ctxfmt(hist_pct(SS_pk_h, p, CTX_MAXBIN, SS_n[p], 0.95, CTX_BIN)) : "–"; hrow("95th percentile", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = (SA_n[p] > 0) ? commas(SA_n[p]) " calls · avg " ctxfmt(SA_sum[p] / SA_n[p]) " · p95 " ctxfmt(hist_pct(SA_h, p, CTX_MAXBIN, SA_n[p], 0.95, CTX_BIN)) : "–"; hrow("Subagent calls", v, "")
+  o("</tbody></table></div>")
+
+  # 1. How big is the context on each call: share of calls in each 25k band, 0 to 1M
+  for (p = 1; p <= nper; p++) {
+    LOK[p] = (CT_n[p] > 0)
+    for (i = 1; i <= 40; i++) {
+      tot = 0
+      for (b = (i - 1) * 5; b < i * 5; b++) tot += CT_h[p, b]
+      LY[p, i] = (CT_n[p] > 0) ? tot / CT_n[p] * 100 : 0
+    }
+  }
+  for (i = 1; i <= 40; i++) LXL[i] = kfmt((i - 1) * 25000)
+  line_chart("How big is the context on a typical call?", "Each point is the <b>% of API calls</b> whose context falls in that 25k-token band (the point at 200k covers 200k to 225k). A peak on the left means most calls run on a small conversation; a peak on the right means most calls carry a large one, which costs more per call.", "Context size of the call (tokens)", "% of calls", 40, 4)
+
+  # 2. How many calls are over a given size: share of calls at or above each size
+  for (p = 1; p <= nper; p++) {
+    LOK[p] = (CT_n[p] > 0)
+    run = 0
+    for (b = CTX_MAXBIN; b >= 0; b--) {
+      run += CT_h[p, b]
+      if (b % 5 == 0) LY[p, b / 5 + 1] = (CT_n[p] > 0) ? run / CT_n[p] * 100 : 0
+    }
+  }
+  for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
+  line_chart("How many calls go over a given size?", "For any size on the bottom axis, the line shows the <b>% of API calls with more context than that</b>. Read up from 200k to see what share of calls carry more than 200k tokens. The line always starts at 100% and falls as the size grows; the further right it stays high, the more of your calls carry big conversations.", "Context size (tokens)", "% of calls above this size", 41, 4)
+
+  # 3. Peak context per session: share of sessions in each 50k band
+  for (p = 1; p <= nper; p++) {
+    LOK[p] = (SS_n[p] > 0)
+    for (i = 1; i <= 20; i++) {
+      tot = 0
+      for (b = (i - 1) * 10; b < i * 10; b++) tot += SS_pk_h[p, b]
+      LY[p, i] = (SS_n[p] > 0) ? tot / SS_n[p] * 100 : 0
+    }
+  }
+  for (i = 1; i <= 20; i++) LXL[i] = kfmt((i - 1) * 50000)
+  line_chart("How large does a session's context get?", "Each session has one <b>peak context</b>: the biggest conversation it reached before it ended. Each point is the <b>% of sessions</b> whose peak falls in that 50k-token band. Sessions piling up near 1M are running into the context limit.", "Peak context of the session (tokens)", "% of sessions", 20, 2)
+
+  # 4. Session length: share of sessions by number of API calls, 50-call bands
+  for (p = 1; p <= nper; p++) {
+    LOK[p] = (SS_n[p] > 0)
+    for (i = 1; i <= 20; i++) {
+      tot = 0
+      for (b = (i - 1) * 50 + 1; b <= ((i == 20) ? CALL_CAP : i * 50); b++) tot += SS_calls_h[p, b]   # the last band takes everything beyond 950
+      LY[p, i] = (SS_n[p] > 0) ? tot / SS_n[p] * 100 : 0
+    }
+  }
+  for (i = 1; i <= 20; i++) LXL[i] = (i == 20) ? "951+" : ((i - 1) * 50 + 1)
+  line_chart("How long are your sessions?", "Each point is the <b>% of sessions</b> with that many API calls (50-call bands; the last band is 951 and up). Short sessions stay cheap. Long sessions keep growing their context, so every later call costs more.", "API calls in the session", "% of sessions", 20, 2)
+
+  # 5. Context by call number in the session
+  if (ix_max >= 2) {
+    W = 1100; H = 340; L = 70; R = 24; T = 16; B = 44
+    pw = W - L - R; ph = H - T - B
+    ymax = 0
+    for (i = 1; i <= ix_max; i++) {
+      x = hist_pct(IX_h, i, CTX_MAXBIN, IX_n[i], 0.95, CTX_BIN)
+      if (x > ymax) ymax = x
+      if (IX_sum[i] / IX_n[i] > ymax) ymax = IX_sum[i] / IX_n[i]
+    }
+    ymax = nice_max(ymax)
+    slot = pw / ix_max
+    o("<h3 class='ch'>How does context grow as a session goes on?</h3>")
+    o("<p class='note cd'>Follow a session call by call: at call number N, how big is the conversation being sent? The <b>average</b>, the <b>median</b> (half of sessions are below it) and the <b>95th percentile</b> (only 1 session in 20 is above it) are taken across all sessions that reached call N. A steep climb means context builds up fast; the dotted line marks 200k.</p>")
+    o("<div class='keys'><span><i class='lk' style='border-color:var(--p1)'></i>Average</span><span><i class='lk' style='border-color:var(--p3);border-top-style:dashed'></i>Median</span><span><i class='lk' style='border-color:var(--p2)'></i>95th percentile</span><span>A point needs at least " CTX_MINSESS " sessions that reach that call</span></div>")
+    o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Context size by call number in the session'>")
+    for (g = 0; g <= 4; g++) {
+      y = T + ph - ph * g / 4
+      o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
+      o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" ctxfmt(ymax * g / 4) "</text>")
+    }
+    if (200000 < ymax) {
+      y = T + ph - 200000 / ymax * ph
+      o("<line x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "' stroke='var(--muted)' stroke-dasharray='2 4'/><text x='" (W - R) "' y='" sprintf("%.1f", y - 5) "' text-anchor='end'>200k</text>")
+    }
+    ptsA = ptsM = ptsP = ""
+    for (i = 1; i <= ix_max; i++) {
+      x = L + slot * (i - 0.5)
+      v[1] = IX_sum[i] / IX_n[i]
+      v[2] = hist_pct(IX_h, i, CTX_MAXBIN, IX_n[i], 0.5, CTX_BIN)
+      v[3] = hist_pct(IX_h, i, CTX_MAXBIN, IX_n[i], 0.95, CTX_BIN)
+      ptsA = ptsA sprintf("%.1f,%.1f ", x, T + ph - v[1] / ymax * ph)
+      ptsM = ptsM sprintf("%.1f,%.1f ", x, T + ph - v[2] / ymax * ph)
+      ptsP = ptsP sprintf("%.1f,%.1f ", x, T + ph - v[3] / ymax * ph)
+      tip = "Call " i ": average " ctxfmt(v[1]) " · median " ctxfmt(v[2]) " · p95 " ctxfmt(v[3]) " · " commas(IX_n[i]) " sessions"
+      o("<g><title>" hesc(tip) "</title><rect class='hit' x='" sprintf("%.1f", L + slot * (i - 1)) "' y='" T "' width='" sprintf("%.2f", slot) "' height='" ph "'/></g>")
+    }
+    o("<polyline class='ln' style='stroke:var(--p2)' points='" ptsP "'/>")
+    o("<polyline class='ln' style='stroke:var(--p3);stroke-dasharray:5 4' points='" ptsM "'/>")
+    o("<polyline class='ln' style='stroke:var(--p1)' points='" ptsA "'/>")
+    step = (ix_max <= 20) ? 1 : (ix_max <= 60) ? 5 : (ix_max <= 160) ? 10 : (ix_max <= 300) ? 25 : 50
+    for (i = step; i <= ix_max; i += step)
+      o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" i "</text>")
+    o("<text x='" (L + pw / 2) "' y='" (H - 6) "' text-anchor='middle'>API call number in the session</text>")
+    o("</svg></div>")
+  }
+
+  # 6. Share of calls by context size band
+  split("Under 50k|50k to 100k|100k to 200k|200k to 500k|Over 500k", kname, "|")
+  split("var(--k3)|var(--k1)|var(--k2)|var(--p2)|var(--p4)", kcol, "|")
+  o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, grouped into five size bands. Each bar is 100% of that period's API calls; the wider the orange and pink parts, the more calls ran on 200k+ tokens of context.</p><div class='keys'>")
+  for (j = 1; j <= 5; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kname[j] "</span>")
+  o("</div>")
+  split("0 10 20 40 100 100000", bins, " ")   # bin edges in units of CTX_BIN: 0, 50k, 100k, 200k, 500k, end
+  for (p = 1; p <= nper; p++) {
+    if (CT_n[p] == 0) continue
+    o("<div class='row'><span>" hesc(plab[p]) "</span><div class='stack'>")
+    for (j = 1; j <= 5; j++) {
+      lo = bins[j] + 0; hi = bins[j + 1] + 0
+      tot = 0
+      for (i = lo; i < hi && i <= CTX_MAXBIN; i++) tot += CT_h[p, i]
+      share = tot / CT_n[p] * 100
+      if (share > 0) o("<span style='width:" sprintf("%.2f", share) "%;background:" kcol[j] "' title='" kname[j] ": " sprintf("%.1f", share) "% of calls'></span>")
+    }
+    o("</div><span class='v'>" commas(CT_n[p]) " calls</span></div>")
+  }
+  o("</div></section>")
 }
 
 # --- Models: one row per model, one column per period ---
@@ -1652,7 +1934,7 @@ xargs -0 -P "$JOBS" -n "$BATCH" sh -c '
           "$FRAG_PROG" > "$out"
   else
     for f in "$@"; do cat "$f" 2>/dev/null; echo; done \
-      | LC_ALL=C grep -F -e "\"usage\"" -e "\"content\":\"<command-" \
+      | LC_ALL=C grep -F -e "\"usage\"" -e "\"content\":\"<command-" -e "\"role\":\"user\",\"content\":\"/" \
       | LC_ALL=C awk -v wid="$$" -v period_file="$PERIOD_FILE" -v tz_off="$TZ_OFF_MIN" \
           "$MAP_PROG" > "$out"
   fi
