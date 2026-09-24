@@ -4,11 +4,13 @@
 
 **See what your Claude Code usage would cost — and where every token goes.**
 
-Tokens · cache hits and misses · models · tools · MCP servers · skills · slash commands<br>
+Tokens · cache hits and misses · models · projects · tools · MCP servers · skills · slash commands<br>
 Compare days, weeks (your Pro/Max quota week too), months or years — in the terminal or as an HTML report.
 
 ![bash](https://img.shields.io/badge/bash-script-4EAA25?logo=gnubash&logoColor=white)
-![macOS | Linux](https://img.shields.io/badge/macOS%20%7C%20Linux-supported-555)
+![PowerShell](https://img.shields.io/badge/PowerShell-script-5391FE?logo=powershell&logoColor=white)
+![macOS | Linux | Windows](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-supported-555)
+[![test](https://github.com/sushantgundla/claudecost/actions/workflows/test.yml/badge.svg)](https://github.com/sushantgundla/claudecost/actions/workflows/test.yml)
 ![no install](https://img.shields.io/badge/dependencies-none-blue)
 ![local only](https://img.shields.io/badge/data-stays%20local-8b5cf6)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
@@ -44,16 +46,36 @@ Compare days, weeks (your Pro/Max quota week too), months or years — in the te
 
 </div>
 
-One bash script. Nothing to install. Everything stays on your machine.
+One script per system, same features and same output. Nothing to install. Everything stays on your machine.
+
+| You use | Script | Runs in |
+| --- | --- | --- |
+| macOS or Linux | `claudecost.sh` | Terminal (bash) |
+| Windows | `claudecost.ps1` | PowerShell (the one that comes with Windows, or PowerShell 7) |
+
+`claudecost.ps1` also runs on macOS and Linux if you have [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`).
 
 ## 🚀 Install
+
+**macOS or Linux**
 
 ```bash
 curl -O https://raw.githubusercontent.com/sushantgundla/claudecost/main/claudecost.sh
 chmod +x claudecost.sh
 ```
 
+**Windows** (PowerShell)
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/sushantgundla/claudecost/main/claudecost.ps1 -OutFile claudecost.ps1
+```
+
+If Windows says running scripts is disabled, run it like this once (nothing is changed on your system):
+`powershell -ExecutionPolicy Bypass -File .\claudecost.ps1 -Days 7`
+
 ## ⚡ Quick start
+
+**macOS or Linux**
 
 ```bash
 ./claudecost.sh --days 7                        # the last 7 days
@@ -61,10 +83,37 @@ chmod +x claudecost.sh
 ./claudecost.sh --reset "wed 23:30" --html report.html && open report.html
 ```
 
-`--reset` is the weekday and local time your weekly limit resets. Find it on claude.ai
-under **Settings → Usage**.
+**Windows** (PowerShell)
+
+```powershell
+.\claudecost.ps1 -Days 7                        # the last 7 days
+.\claudecost.ps1 -Reset "wed 23:30" -Weeks 2    # your last 2 quota weeks, side by side
+.\claudecost.ps1 -Reset "wed 23:30" -Html report.html; start report.html
+```
+
+`--reset` / `-Reset` is the weekday and local time your weekly limit resets. Find it on
+claude.ai under **Settings → Usage**.
+
+### Same options, two spellings
+
+Every option works in both scripts. On Windows write it PowerShell-style (`-Days 7`). The
+bash spelling (`--days 7`) also works in `claudecost.ps1`, so the examples below run on both.
+
+| bash (`claudecost.sh`) | PowerShell (`claudecost.ps1`) |
+| --- | --- |
+| `--days 7` | `-Days 7` |
+| `--since 2026-09-01 --until 2026-09-07` | `-Since 2026-09-01 -Until 2026-09-07` |
+| `--month 2026-08` | `-Month 2026-08` |
+| `--reset "wed 23:30" --weeks 4 --current` | `-Reset "wed 23:30" -Weeks 4 -Current` |
+| `--compare week --last 3` | `-Compare week -Last 3` |
+| `--html report.html` | `-Html report.html` |
+| `--top 20` `--project app` `--dir PATH` | `-Top 20` `-Project app` `-Dir PATH` |
+| `--freq daily` `--offline` `--help` | `-Freq daily` `-Offline` `-Help` |
 
 ## 🧭 Commands
+
+The tables use the bash spelling. On Windows use `.\claudecost.ps1` and the PowerShell
+spelling from the table above (or keep the bash one).
 
 ### One time range
 
@@ -107,13 +156,18 @@ under **Settings → Usage**.
 read, cache write, output, input), a cost chart, a models table, and the top tools, MCP
 servers, skills, slash commands and subagents for each period.
 
-**In the HTML report** (`--html`)
+**In the HTML report** (`--html` / `-Html`). Every section folds away with a click, and every
+chart has a one-line description in plain words.
 
-- A card per period, the comparison table, and where the money goes
-- A cost chart: bars for cost, a line for API calls, hover for exact numbers
-- Models: one row per model, one column per period
-- Top 10 tools, MCP servers, skills, slash commands and subagents, switchable between
-  "by item" and "by week" (or day, month, year)
+- A card per period and the comparison table, with numbers colored green, blue or red so
+  problems stand out (hover for the reason)
+- Where the money goes, and a cache read vs write view with the hit rate over time
+- Context size: how big the conversation is on each call, how it grows during a session,
+  how long sessions run, as easy-to-read cumulative charts
+- Models: a cost split per period and one row per model
+- Requests and cost: per day, by hour of the day, by day of the week, and per project
+- Top lists of tools, MCP servers and MCP tools, Bash commands (first word), files read,
+  skills, slash commands, subagents and projects, by item or by week
 - Light and dark mode, works offline, easy to share as a single file
 
 ## 🧮 What the numbers mean
@@ -144,9 +198,12 @@ uses built-in prices). Models without a known price are marked `*` and priced li
 
 ## 🏎️ Speed
 
-A few seconds, even with months of logs (tested on a MacBook). Files are read in
-parallel, and `perl` (on macOS and most Linux) pulls out just the fields needed. Without
-perl it falls back to plain awk, about twice as slow.
+`claudecost.sh`: a few seconds, even with months of logs (tested on a MacBook). Files are
+read in parallel, and `perl` (on macOS and most Linux) pulls out just the fields needed.
+Without perl it falls back to plain awk, about twice as slow.
+
+`claudecost.ps1` reads the files one after another. About 4 seconds for 270 MB of logs on
+PowerShell 7; expect longer on Windows PowerShell 5.1 with several GB.
 
 ## ⚙️ Settings
 
@@ -154,12 +211,21 @@ perl it falls back to plain awk, about twice as slow.
 | --- | --- |
 | `NO_COLOR=1` | No colours (also off automatically when output is not a terminal) |
 | `FORCE_COLOR=1` | Keep colours when piping, e.g. `FORCE_COLOR=1 ./claudecost.sh \| less -R` |
-| `CLAUDE_DIR` | Same as `--dir` |
-| `CLAUDECOST_READER=awk` | Force the plain awk reader |
+| `CLAUDE_DIR` | Same as `--dir` / `-Dir` |
+| `CLAUDECOST_READER=awk` | Force the plain awk reader (`claudecost.sh` only) |
+
+On Windows set a variable for one run like this: `$env:NO_COLOR = "1"; .\claudecost.ps1`
 
 ## 📦 Requirements
 
-bash, awk, curl and perl, all included with macOS and most Linux systems.
+- **macOS or Linux:** bash, awk, curl and perl, all included with most systems.
+- **Windows:** PowerShell 5.1 (already on Windows 10 and 11) or PowerShell 7. Nothing else.
+
+## 🧪 Tests
+
+`tests/run-tests.sh` (bash) and `tests/run-tests.ps1` (PowerShell) run each script on a small
+made-up log folder in `tests/fixtures` and check the numbers. A GitHub Actions workflow runs
+both on Linux, macOS and Windows (Windows PowerShell 5.1 and PowerShell 7) on every push.
 
 ## 📄 License
 

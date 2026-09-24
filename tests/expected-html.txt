@@ -1,0 +1,8 @@
+<title>Claude Code Usage</title>
+Requests and cost
+Cost per project
+<span title='find'>
+<span title='git'>
+<span title='src/main.py'>
+<span title='app'>
+demo › search

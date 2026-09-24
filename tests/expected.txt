@@ -1,0 +1,15 @@
+Total $0.07 · 6 calls · 125.4K tokens · hit rate 96.1% · 3 active days · peak Sep 2 $0.03
+API calls 6
+Cache hit rate 96.1%
+Est. API cost $0.07
+claude-opus-5 $0.04 57.3% 2
+claude-sonnet-5 $0.03 42.7% 4
+Bash 3
+Explore 1
+demo-skill 1
+/clear 1
+/handoff 1
+/model 1
+API responses 7 6 1 message id
+Tool and MCP calls 10 9 1 tool_use id
+Slash commands 3 3 0 message uuid
