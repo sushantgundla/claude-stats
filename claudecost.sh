@@ -2125,30 +2125,48 @@ function write_hour_charts(    i, lab) {
   combo_chart("Cost and requests by day of the week", "The same numbers grouped by day of the week. The bars show the cost; the line shows the requests. It shows which days you lean on Claude Code the most.", 7, lab, 1, 1)
 }
 
-# Cost per project: the folder each session ran in
-function write_project_cost(    ord, n, i, lim, p, key, w, mx, tot, tc) {
+# Cost per project: the folder each session ran in. Horizontal bars, one row per project, stacked by period.
+function write_project_cost(    ord, n, i, lim, p, key, mx, tc, W, H, L, R, T, B, rh, pw, ph, x, y, g, w, run, tot, lab) {
   n = sort_desc(PJ_t, ord)
   if (n == 0) return
   lim = (n < top_n) ? n : top_n
   tc = 0
   for (i = 1; i <= n; i++) tc += PJ_t[ord[i]]
   mx = 0
-  for (i = 1; i <= lim; i++) for (p = 1; p <= nper; p++) if (PJ_c[p, ord[i]] > mx) mx = PJ_c[p, ord[i]]
-  o("<h3 class='ch'>Cost per project</h3><p class='note cd'>What each project cost, where a project is the folder a session ran in. The number on the right is the total for the periods shown and its share of all cost" ((nper > 1) ? "; each colored bar is one period" : "") ". Top " lim " of " n ".</p>")
-  o("<ul class='top'>")
+  for (i = 1; i <= lim; i++) if (PJ_t[ord[i]] > mx) mx = PJ_t[ord[i]]
+  mx = nice_max(mx)
+  rh = 34; W = 1100; L = 190; R = 150; T = 10; B = 30
+  pw = W - L - R; ph = lim * rh; H = T + ph + B
+  o("<h3 class='ch'>Cost per project</h3><p class='note cd'>What each project cost, where a project is the folder a session ran in. Each row is one project and the bar length is its cost" ((nper > 1) ? ", split by period" : "") ". The label on the right is the total and its share of all cost. Showing the top " lim " of " n " projects.</p>")
+  if (nper > 1) {
+    o("<div class='keys'>")
+    for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
+    o("</div>")
+  }
+  o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Cost per project'>")
+  for (g = 0; g <= 4; g++) {
+    x = L + pw * g / 4
+    o("<line class='gl' x1='" sprintf("%.1f", x) "' x2='" sprintf("%.1f", x) "' y1='" T "' y2='" (T + ph) "'/>")
+    o("<text x='" sprintf("%.1f", x) "' y='" (T + ph + 20) "' text-anchor='middle'>" money(mx * g / 4) "</text>")
+  }
   for (i = 1; i <= lim; i++) {
     key = ord[i]
+    y = T + rh * (i - 1)
+    lab = key
+    if (length(lab) > 26) lab = substr(lab, 1, 25) "…"
+    o("<g><title>" hesc(key ": " money(PJ_t[key]) " · " pct(PJ_t[key], tc) " of all cost") "</title><text x='" (L - 10) "' y='" sprintf("%.1f", y + rh / 2 + 4) "' text-anchor='end'>" hesc(lab) "</text>")
+    run = 0
+    for (p = 1; p <= nper; p++) {
+      w = (PJ_c[p, key] + 0) / mx * pw
+      if (w <= 0) continue
+      o("<rect x='" sprintf("%.1f", L + run) "' y='" sprintf("%.1f", y + 5) "' width='" sprintf("%.2f", w) "' height='" (rh - 10) "' fill='" pcolor(p) "'><title>" hesc(key " · " plab[p] ": " money(PJ_c[p, key]) " · " commas(PJ_n[p, key]) " requests") "</title></rect>")
+      run += w
+    }
     tot = 0
     for (p = 1; p <= nper; p++) tot += PJ_n[p, key]
-    o("<li><div class='name'><span title='" hesc(key) "'>" hesc(key) " <small class='tr'>" commas(tot) " requests</small></span><b>" money(PJ_t[key]) " <small class='sh'>" pct(PJ_t[key], tc) "</small></b></div><div class='bars'>")
-    for (p = 1; p <= nper; p++) {
-      w = (mx > 0) ? (PJ_c[p, key] + 0) / mx * 100 : 0
-      if (w > 0 && w < 1) w = 1
-      o("<div class='bar' title='" hesc(plab[p]) "'><i style='width:" sprintf("%.2f", w) "%;background:" pcolor(p) "'></i><em>" money(PJ_c[p, key] + 0) "</em></div>")
-    }
-    o("</div></li>")
+    o("<text x='" sprintf("%.1f", L + run + 8) "' y='" sprintf("%.1f", y + rh / 2 + 4) "'>" money(PJ_t[key]) " · " pct(PJ_t[key], tc) "</text></g>")
   }
-  o("</ul>")
+  o("</svg></div>")
 }
 
 function hrow(label, vals, cls,    p) {
