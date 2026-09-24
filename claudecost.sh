@@ -1090,6 +1090,8 @@ END {
     B_cost[bk]    += line_cost
     B_cost_p[bk, p] += line_cost
     B_calls[bk]++
+    B_cr[bk] += cache_read
+    B_in[bk] += input_tok + cache_create + cache_read
 
     month_cost[ym]   += line_cost
     month_tokens[ym] += input_tok + output_tok + cache_create + cache_read
@@ -1391,7 +1393,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
 
   # --- Header ---
   o("<header><h1>Claude Code usage</h1>")
-  o("<p class='sub'>Estimated at API list prices · pricing " (loaded_live > 0 ? "LiteLLM (" loaded_live " models)" : "hardcoded") " · generated " hesc(gen_time) "</p>")
+  o("<p class='sub'>Costs are estimates at public API prices, not your bill · prices from " (loaded_live > 0 ? "LiteLLM (" loaded_live " models)" : "a built-in list") " · made " hesc(gen_time) "</p>")
   o("<div class='legend'>")
   for (p = 1; p <= nper; p++)
     o("<span><i class='chip' style='background:" pcolor(p) "'></i><b>" hesc(plab[p]) "</b> · " hesc(plong[p]) "</span>")
@@ -1410,7 +1412,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o("</div></section>")
 
   # --- Comparison table ---
-  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><div class='card tw'><table><thead><tr><th></th>")
+  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached).</p><div class='card tw'><table><thead><tr><th></th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(P_calls[p]);                                             hrow("API calls", v, "")
@@ -1437,7 +1439,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   split("var(--k1)|var(--k2)|var(--k3)|var(--k4)", kcol, "|")
   split("#fff|#1d1c19|#fff|#1d1c19", kfg, "|")
   o("<section><details open><summary>Where the money goes</summary><div class='card'>")
-  o("<p class='note' style='margin:0 0 12px'>Each bar is the cost split by kind. <b>Cache read is good</b>: the conversation is already stored, so it costs about 0.1x the input price. <b>Cache write is not</b>: new or expired content is stored again at 1.25x to 2x, and <b>input not cached</b> costs the full 1x. A healthy report reads far more from cache than it writes: look for a high cache-read share of input tokens (under each bar).</p><div class='keys'>")
+  o("<p class='note' style='margin:0 0 12px'>Each bar splits that period's cost by what you paid for. <b>Cache read is the good part</b>: the model re-reads a conversation it already stored, at about a tenth of the normal price. <b>Cache write is the part to avoid</b>: it means storing the conversation again, at 1.25 to 2 times the normal price. <b>Input, not cached</b> is full price. <b>Output</b> is what the model wrote back. Under each bar, the same split in tokens shows how well the cache is working.</p><div class='keys'>")
   for (j = 1; j <= 4; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kinds[j] "</span>")
   o("</div>")
   for (p = 1; p <= nper; p++) {
@@ -1453,6 +1455,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   }
   o("</div></details></section>")
 
+  write_cache()
   write_chart()
   write_context()
   write_models()
@@ -1460,13 +1463,71 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
 
   # --- Notes ---
   o("<section><details open><summary>How to read this</summary><div class='card'><ul class='note' style='margin:0;padding-left:18px'>")
-  o("<li><b>Costs are API list-price estimates</b>, not a subscription bill. Pro and Max quotas are measured differently.</li>")
-  o("<li><b>Cache read (hit)</b>: conversation already cached, billed at about 0.1x input. <b>Cache write (miss)</b>: new content stored for 5 minutes (1.25x) or 1 hour (2x). <b>Not cached</b>: plain input at 1x. Output is never cached.</li>")
-  o("<li>Cost grows with <b>number of calls × conversation size × model price</b>. Every tool call is another API call that re-reads the conversation.</li>")
-  o("<li><b>Counted once each.</b> API responses by message id (" commas(raw_u) " log lines → " commas(uniq_u) " unique), tool and MCP calls by tool_use id (" commas(raw_t) " → " commas(uniq_t) "), slash commands by message uuid (" commas(raw_c) " → " commas(uniq_c) "). Copies come from streamed replies and resumed or forked sessions; each is placed at its earliest timestamp. Periods use local time.</li>")
+  o("<li><b>These costs are estimates.</b> They use public API prices, so they are not your Pro or Max bill, which is measured differently.</li>")
+  o("<li><b>Three kinds of input.</b> <b>Cache read</b>: the model re-reads a conversation it already stored, at about a tenth of the normal price. <b>Cache write</b>: the model stores new content, for 5 minutes (1.25x the price) or 1 hour (2x). <b>Not cached</b>: normal price (1x). Output is never cached.</li>")
+  o("<li><b>What makes the cost go up:</b> the number of calls, times the size of the conversation, times the model's price. Every tool call is one more call that re-reads the whole conversation.</li>")
+  o("<li><b>Each thing is counted once.</b> Some log lines are copies (from streamed replies, or from resumed and forked sessions). API responses go from " commas(raw_u) " log lines to " commas(uniq_u) " unique ones, tool and MCP calls from " commas(raw_t) " to " commas(uniq_t) ", and slash commands from " commas(raw_c) " to " commas(uniq_c) ". Each is counted at its earliest time. Days use your local time.</li>")
   o("</ul></div></details></section>")
   o("</div></body></html>")
   close(html_file)
+}
+
+# --- Cache: how much of the input was read from cache, against written or not cached ---
+function write_cache(    p, tin, w, j, kn, kc, kf, kv, nb, bk, i, k, r, rmin, ymin, W, H, L, R, T, B, pw, ph, g, y, x, pts, step, tip, slot) {
+  split("Cache read (hit) · good|Cache write (miss) · avoid|Not cached · avoid", kn, "|")
+  split("var(--k1)|var(--k2)|var(--k4)", kc, "|")
+  split("#fff|#1d1c19|#1d1c19", kf, "|")
+  o("<section><details open><summary>Cache: read vs write</summary><div class='card'>")
+  o("<p class='note' style='margin:0 0 12px'>The same spending, counted in <b>tokens</b> instead of dollars. Almost every token should be a <b>cache read</b>: the model is re-reading a conversation it already stored, which is cheap. A <b>cache write</b> means it had to store the conversation again, usually because you were idle for a while or changed the conversation. More reads and fewer writes means a lower bill.</p><div class='keys'>")
+  for (j = 1; j <= 3; j++) o("<span><i class='chip' style='background:" kc[j] "'></i>" kn[j] "</span>")
+  o("</div>")
+  for (p = 1; p <= nper; p++) {
+    tin = P_in[p] + P_cw5[p] + P_cw1h[p] + P_cr[p]
+    if (tin <= 0) continue
+    kv[1] = P_cr[p]; kv[2] = P_cw5[p] + P_cw1h[p]; kv[3] = P_in[p]
+    o("<div class='row'><span>" hesc(plab[p]) "</span><div class='stack'>")
+    for (j = 1; j <= 3; j++) {
+      w = kv[j] / tin * 100
+      if (w > 0) o("<span style='width:" sprintf("%.2f", w) "%;background:" kc[j] ";color:" kf[j] "' title='" kn[j] ": " format_tokens(kv[j]) " tokens (" sprintf("%.1f", w) "% of input)'>" ((w >= 6) ? sprintf("%.0f%%", w) : "") "</span>")
+    }
+    o("</div><span class='v'>" format_tokens(tin) "</span></div>")
+    o("<div class='cap'><b>" pct(P_cr[p], tin) "</b> cache read · " pct(kv[2], tin) " cache write · " pct(P_in[p], tin) " not cached" ((kv[2] > 0) ? " · <b>" sprintf("%.0f", P_cr[p] / kv[2]) " tokens read for every token written</b>" : "") "</div>")
+  }
+  # hit rate per bucket
+  nb = sort_keys(B_in, bk)
+  rmin = 100
+  for (i = 1; i <= nb; i++) if (B_in[bk[i]] > 0) { r = B_cr[bk[i]] / B_in[bk[i]] * 100; if (r < rmin) rmin = r }
+  if (nb >= 2) {
+    ymin = int((rmin - 1) / 5) * 5
+    if (ymin < 0) ymin = 0
+    W = 1100; H = 300; L = 70; R = 24; T = 16; B = 44
+    pw = W - L - R; ph = H - T - B; slot = pw / nb
+    o("<h3 class='ch'>How well did the cache hold up each " unit_word(bucket_unit) "?</h3>")
+    o("<p class='note cd'>The <b>cache hit rate</b> is the share of tokens that were read from cache. Higher is better. A dip means the stored conversation had gone cold (you were idle for a while, started a new session or cleared the chat), so it had to be stored again at a higher price. The axis starts at " ymin "%, not at zero, so small dips are easy to see.</p>")
+    o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Cache hit rate per " unit_word(bucket_unit) "'>")
+    for (g = 0; g <= 4; g++) {
+      y = T + ph - ph * g / 4
+      o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
+      o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" sprintf("%g", ymin + (100 - ymin) * g / 4) "%</text>")
+    }
+    pts = ""
+    for (i = 1; i <= nb; i++) {
+      k = bk[i]
+      if (B_in[k] <= 0) continue
+      r = B_cr[k] / B_in[k] * 100
+      x = L + slot * (i - 0.5); y = T + ph - (r - ymin) / (100 - ymin) * ph
+      pts = pts sprintf("%.1f,%.1f ", x, y)
+      tip = bucket_label(k, bucket_unit) ": " sprintf("%.1f", r) "% hit rate · " format_tokens(B_cr[k]) " of " format_tokens(B_in[k]) " input tokens read from cache"
+      o("<g><title>" hesc(tip) "</title><rect class='hit' x='" sprintf("%.1f", L + slot * (i - 1)) "' y='" T "' width='" sprintf("%.2f", slot) "' height='" ph "'/>" ((nb <= 60) ? "<circle class='dot' cx='" sprintf("%.1f", x) "' cy='" sprintf("%.1f", y) "' r='3'/>" : "") "</g>")
+    }
+    o("<polyline class='ln' style='stroke:var(--p1)' points='" pts "'/>")
+    step = int((nb + 11) / 12)
+    if (step < 1) step = 1
+    for (i = 1; i <= nb; i += step)
+      o("<text x='" sprintf("%.1f", L + slot * (i - 0.5)) "' y='" (H - B + 22) "' text-anchor='middle'>" hesc(bucket_tick(bk[i], bucket_unit)) "</text>")
+    o("</svg></div>")
+  }
+  o("</div></details></section>")
 }
 
 # --- Cost chart: bars = cost (left axis, stacked by period), line = API calls (right axis) ---
@@ -1483,7 +1544,7 @@ function write_chart(    nb, bk, i, p, maxc, maxn, yc, yn, W, H, L, R, T, B, pw,
   pw = W - L - R; ph = H - T - B
   slot = pw / nb; bw = slot * 0.7
   if (bw < 1) bw = 1
-  o("<section><details open><summary>Cost per " unit_word(bucket_unit) "</summary><div class='card'><div class='keys'>")
+  o("<section><details open><summary>Cost per " unit_word(bucket_unit) "</summary><p class='note cd'>The bars show what each " unit_word(bucket_unit) " cost (left scale). The line shows how many API calls were made (right scale). Cost usually goes up and down with the number of calls.</p><div class='card'><div class='keys'>")
   if (nper > 1) for (p = 1; p <= nper; p++) o("<span><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</span>")
   else o("<span><i class='chip' style='background:" pcolor(1) "'></i>Cost (left axis)</span>")
   o("<span><i class='lk'></i>API calls (right axis)</span></div><div class='chartwrap'>")
@@ -1657,7 +1718,7 @@ function line_chart(title, desc, xtitle, ytitle, n, tk,    p, i, W, H, L, R, T, 
 
 function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kfg, kname, tot, run, b, lab) {
   o("<section><details open><summary>Context size</summary><div class='card'>")
-  o("<p class='note' style='margin:0 0 14px'>Every API call re-sends the whole conversation, so its size is the <b>context</b>: input + cache write + cache read tokens. It is counted per API call, not per typed prompt: one prompt can trigger many calls (tool loops), each with its own context. Main conversation only; subagents are on their own row.</p>")
+  o("<p class='note' style='margin:0 0 14px'>Each time Claude answers, it reads the whole conversation so far. The size of that conversation, in tokens, is the <b>context</b>. A bigger context makes every call cost more. This is counted for every API call, not for every message you type, because one message can make Claude call the API many times (for example to use tools). Only your main conversation is counted; helper agents (subagents) get their own row.</p>")
   # per-period table
   o("<div class='tw'><table><thead><tr><th></th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
@@ -1687,7 +1748,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
     }
   }
   for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
-  line_chart("How many calls go over a given size?", "For any size on the bottom axis, the line shows the <b>% of API calls with more context than that</b>. Read up from 200k to see what share of calls carry more than 200k tokens. The line always starts at 100% and falls as the size grows; the further right it stays high, the more of your calls carry big conversations.", "Context size (tokens)", "% of calls above this size", 41, 4)
+  line_chart("How many calls go over a given size?", "Pick a size on the bottom axis. The line shows what <b>% of calls</b> had a bigger conversation than that. It starts at 100% and only goes down. If the line stays high toward the right, many of your calls ran with a very large conversation, which costs more.", "Context size (tokens)", "% of calls above this size", 41, 4)
 
   # 2. Peak context per session: share of sessions whose peak reached at least each size.
   # Cumulative, so it stays a smooth falling line even when a week has only a few sessions.
@@ -1700,7 +1761,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
     }
   }
   for (i = 1; i <= 41; i++) LXL[i] = kfmt((i - 1) * 25000)
-  line_chart("How large does a session's context get?", "Each session has one <b>peak context</b>: the biggest conversation it reached. For any size on the bottom axis, the line shows the <b>% of sessions that reached at least that size</b>. It starts at 100% and only falls; a line that stays high out to 1M means many sessions grow until they hit the context limit.", "Context size (tokens)", "% of sessions that reached it", 41, 4)
+  line_chart("How large does a session's context get?", "A session grows until it ends. Its <b>peak</b> is the biggest conversation it reached. Pick a size on the bottom axis: the line shows what <b>% of sessions</b> got at least that big. If the line stays high toward 1M, many sessions grew until they hit the limit.", "Context size (tokens)", "% of sessions that reached it", 41, 4)
 
   # 3. Session length: share of sessions with more than N API calls (cumulative, like the two above)
   for (p = 1; p <= nper; p++) {
@@ -1713,7 +1774,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
     LY[p, 1] = (SS_n[p] > 0) ? 100 : 0
   }
   for (i = 1; i <= 21; i++) LXL[i] = (i - 1) * 50
-  line_chart("How long are your sessions?", "For any number of API calls on the bottom axis, the line shows the <b>% of sessions that ran longer than that</b>. It starts at 100% and only falls. Short sessions stay cheap; long ones keep growing their context, so every later call costs more.", "API calls in the session", "% of sessions longer than this", 21, 2)
+  line_chart("How long are your sessions?", "Pick a number of calls on the bottom axis. The line shows what <b>% of sessions</b> lasted longer than that. Short sessions are cheap. Long sessions get more expensive, because the conversation keeps growing and is re-read on every call.", "API calls in the session", "% of sessions longer than this", 21, 2)
 
   # 4. Context by call number in the session
   if (ix_max >= 2) {
@@ -1728,7 +1789,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
     ymax = nice_max(ymax)
     slot = pw / ix_max
     o("<h3 class='ch'>How does context grow as a session goes on?</h3>")
-    o("<p class='note cd'>Follow a session call by call: at call number N, how big is the conversation being sent? The <b>average</b>, the <b>median</b> (half of sessions are below it) and the <b>95th percentile</b> (only 1 session in 20 is above it) are taken across all sessions that reached call N. A steep climb means context builds up fast; the dotted line marks 200k.</p>")
+    o("<p class='note cd'>This shows how the conversation grows during a session. At call number N (bottom axis), the lines show how big the conversation was: on <b>average</b>, for the <b>median</b> session (half of sessions are smaller), and for a big one, the <b>95th percentile</b> (only 1 session in 20 is bigger). The dotted line marks 200k tokens. A steep line means the conversation fills up fast.</p>")
     o("<div class='keys'><span><i class='lk' style='border-color:var(--p1)'></i>Average</span><span><i class='lk' style='border-color:var(--p3);border-top-style:dashed'></i>Median</span><span><i class='lk' style='border-color:var(--p2)'></i>95th percentile</span><span>A point needs at least " CTX_MINSESS " sessions that reach that call</span></div>")
     o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Context size by call number in the session'>")
     for (g = 0; g <= 4; g++) {
@@ -1766,7 +1827,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   split("Under 50k|50k to 100k|100k to 200k|200k to 500k|Over 500k", kname, "|")
   split("var(--k3)|var(--k1)|var(--k2)|var(--p2)|var(--p4)", kcol, "|")
   split("#fff|#fff|#1d1c19|#1d1c19|#fff", kfg, "|")
-  o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, grouped into five size bands (a summary of where the line crosses 50k, 100k, 200k and 500k). Each bar is 100% of that period's API calls; the wider the orange and pink parts, the more calls ran on 200k+ tokens of context.</p><div class='keys'>")
+  o("<h3 class='ch'>Where do your calls land?</h3><p class='note cd'>The same calls as the first chart, put into five size groups. Each bar is 100% of the calls in that period. The more orange and pink, the more calls ran with a conversation over 200k tokens.</p><div class='keys'>")
   for (j = 1; j <= 5; j++) o("<span><i class='chip' style='background:" kcol[j] "'></i>" kname[j] "</span>")
   o("</div>")
   split("0 10 20 40 100 100000", bins, " ")   # bin edges in units of CTX_BIN: 0, 50k, 100k, 200k, 500k, end
@@ -1788,7 +1849,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
 # --- Models: one row per model, one column per period ---
 function write_models(    n, ord, i, p, mk, c) {
   n = sort_desc(mod_cost, ord)
-  o("<section><details open><summary>Models</summary><div class='card tw'><table><thead><tr><th>Model</th>")
+  o("<section><details open><summary>Models</summary><p class='note cd'>What each model you used cost, and how many tokens it handled. A * means no price was found, so a default price was used.</p><div class='card tw'><table><thead><tr><th>Model</th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   if (nper > 1) o("<th>Total</th>")
   o("</tr></thead><tbody>")
@@ -1824,7 +1885,7 @@ function period_list(cat, p, keys, vals,    k, kp, n) {
 
 # --- Top lists: by item (bars per period) or by period (lists per period) ---
 function write_top(    ci, cat, tot, ord, n, lim, mx, i, p, key, w, keys, vals) {
-  o("<section><details open><summary>What was used · top " top_n "</summary>")
+  o("<section><details open><summary>What was used · top " top_n "</summary><p class='note cd'>The tools, MCP servers, skills, slash commands and helper agents (subagents) you used most. Each number is how many times it was used.</p>")
   if (nper > 1) {
     o("<input type='radio' name='tv' id='tv1' class='tv' checked><label for='tv1' class='tvl l1'>By item</label>")
     o("<input type='radio' name='tv' id='tv2' class='tv'><label for='tv2' class='tvl l2'>By " ((compare_unit != "") ? compare_unit : "period") "</label>")
