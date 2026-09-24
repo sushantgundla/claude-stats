@@ -1,19 +1,59 @@
-# claudecost
+<div align="center">
 
-See what your Claude Code usage would cost at API prices: tokens, cache hits and misses,
-models, tools, MCP servers, skills and slash commands. Compare days, weeks (including your
-Pro/Max quota week), months or years side by side, in the terminal or as an HTML report.
+# 💸 claudecost
+
+**See what your Claude Code usage would cost — and where every token goes.**
+
+Tokens · cache hits and misses · models · tools · MCP servers · skills · slash commands<br>
+Compare days, weeks (your Pro/Max quota week too), months or years — in the terminal or as an HTML report.
+
+![bash](https://img.shields.io/badge/bash-script-4EAA25?logo=gnubash&logoColor=white)
+![macOS | Linux](https://img.shields.io/badge/macOS%20%7C%20Linux-supported-555)
+![no install](https://img.shields.io/badge/dependencies-none-blue)
+![local only](https://img.shields.io/badge/data-stays%20local-8b5cf6)
+![license](https://img.shields.io/badge/license-MIT-lightgrey)
+
+<table>
+<tr>
+<td width="55%"><img src="docs/report.png" alt="HTML report: a card per week and a cost chart"></td>
+<td width="45%"><img src="docs/terminal.png" alt="Terminal report: comparison table and cost split"></td>
+</tr>
+<tr>
+<td align="center"><sub>HTML report (<code>--html</code>)</sub></td>
+<td align="center"><sub>Terminal</sub></td>
+</tr>
+</table>
+
+<details>
+<summary><b>📸 More screenshots</b></summary>
+<br>
+<table>
+<tr>
+<td><img src="docs/comparison.png" alt="Comparison table"></td>
+<td><img src="docs/models.png" alt="Models per week"></td>
+<td><img src="docs/top-by-week.png" alt="Top tools, MCP servers and skills per week"></td>
+</tr>
+<tr>
+<td align="center"><sub>Comparison</sub></td>
+<td align="center"><sub>Models per week</sub></td>
+<td align="center"><sub>Top 10, by week</sub></td>
+</tr>
+</table>
+<sub>Screenshots use generated demo data.</sub>
+</details>
+
+</div>
 
 One bash script. Nothing to install. Everything stays on your machine.
 
-## Install
+## 🚀 Install
 
 ```bash
 curl -O https://raw.githubusercontent.com/sushantgundla/claudecost/main/claudecost.sh
 chmod +x claudecost.sh
 ```
 
-## Quick start
+## ⚡ Quick start
 
 ```bash
 ./claudecost.sh --days 7                        # the last 7 days
@@ -24,7 +64,7 @@ chmod +x claudecost.sh
 `--reset` is the weekday and local time your weekly limit resets. Find it on claude.ai
 under **Settings → Usage**.
 
-## Commands
+## 🧭 Commands
 
 ### One time range
 
@@ -61,34 +101,11 @@ under **Settings → Usage**.
 | `--offline` | Use built-in prices instead of downloading the latest |
 | `--help` | All options |
 
-## What you get
+## 📊 What you get
 
-**In the terminal** *(example numbers)*
-
-```
-  Claude Code usage  · estimated at API list prices · pricing LiteLLM (21 models)
-
-  ■ Week 1      Wed Sep 09 23:30 → Wed Sep 16 23:30
-  ■ Week 2      Wed Sep 16 23:30 → Wed Sep 23 23:30
-
-  Total  $806  ·  6,000 calls  ·  1.30B tokens  ·  hit rate 97.4%  ·  14 active days
-
-  ▍Comparison
-
-                                       Week 1               Week 2    vs prev
-  ───────────────────────────────────────────────────────────────────────────
-  API calls                             2,500                3,500       +40%
-  Input tokens                          0.61B                0.69B       +13%
-    Cache read (hit)             0.59B · $255         0.67B · $263        +3%
-    Cache writes (miss)          18.0M · $125          15.0M · $89       -29%
-    Cache hit rate                      97.0%                97.7%    +0.7 pt
-  Output tokens                    1.5M · $33           2.1M · $41       +24%
-  Est. API cost                          $413                 $393        -5%
-```
-
-…followed by where the money goes (cache read, cache write, output, input), a cost chart,
-a models table, and the top tools, MCP servers, skills, slash commands and subagents for
-each period.
+**In the terminal**: the comparison with a change column, where the money goes (cache
+read, cache write, output, input), a cost chart, a models table, and the top tools, MCP
+servers, skills, slash commands and subagents for each period.
 
 **In the HTML report** (`--html`)
 
@@ -99,7 +116,7 @@ each period.
   "by item" and "by week" (or day, month, year)
 - Light and dark mode, works offline, easy to share as a single file
 
-## What the numbers mean
+## 🧮 What the numbers mean
 
 - **Cache read (hit)**: conversation already in the cache. About 0.1x the input price.
 - **Cache write (miss)**: new content stored in the cache, 1.25x input for 5 minutes or 2x
@@ -110,7 +127,7 @@ each period.
 - Costs are **API list-price estimates**, not a Pro or Max bill. Subscription limits are
   measured differently.
 
-## How it counts
+## 🔁 How it counts
 
 Claude Code logs a reply once per streamed block, and resumed or forked sessions copy old
 messages into new files, often with new timestamps. claudecost counts each thing once:
@@ -125,13 +142,13 @@ items. Because of this, totals can be lower than tools that count every line.
 Prices come from [LiteLLM](https://github.com/BerriAI/litellm) on every run (`--offline`
 uses built-in prices). Models without a known price are marked `*` and priced like Sonnet.
 
-## Speed
+## 🏎️ Speed
 
-About 4 seconds for 2 GB of logs on a recent Mac. Files are read in parallel, and `perl`
-(on macOS and most Linux) pulls out just the fields needed. Without perl it falls back to
-plain awk, about twice as slow.
+A few seconds, even with months of logs (tested on a MacBook). Files are read in
+parallel, and `perl` (on macOS and most Linux) pulls out just the fields needed. Without
+perl it falls back to plain awk, about twice as slow.
 
-## Settings
+## ⚙️ Settings
 
 | Variable | Effect |
 | --- | --- |
@@ -140,10 +157,10 @@ plain awk, about twice as slow.
 | `CLAUDE_DIR` | Same as `--dir` |
 | `CLAUDECOST_READER=awk` | Force the plain awk reader |
 
-## Requirements
+## 📦 Requirements
 
 bash, awk, curl and perl, all included with macOS and most Linux systems.
 
-## License
+## 📄 License
 
 MIT

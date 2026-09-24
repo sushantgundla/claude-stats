@@ -1250,6 +1250,7 @@ function chg(arr, cost,    a, b, d, s, col) {
 
 function chg_pt(arr,    d, col) {
   d = arr[nper] - arr[nper - 1]
+  if (d > -0.05 && d < 0.05) d = 0   # no "-0.0 pt"
   col = (d > 0.05) ? CG : ((d < -0.05) ? CRD : CD)
   return col sprintf("%10s", sprintf("%+.1f pt", d)) CR
 }
