@@ -1342,7 +1342,7 @@ function o(s) { print s > html_file }
 
 function pcolor(p) { return "var(--p" ((p - 1) % 5 + 1) ")" }
 
-function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd, d, c, cat, ci, seg, parts, kinds, kcol, kfg, ktok, kc, kn, tin, mord2, nm2, mk) {
+function write_html(    sh, p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd, d, c, cat, ci, seg, parts, kinds, kcol, kfg, ktok, kc, kn, tin, mord2, nm2, mk) {
   o("<!doctype html><html lang='en'><head><meta charset='utf-8'>")
   o("<meta name='viewport' content='width=device-width,initial-scale=1'>")
   o("<title>Claude Code Usage</title>")
@@ -1387,6 +1387,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   o(".mini{list-style:none;margin:0;padding:0}.mini li{padding:5px 0;font-size:13px}.mini .name{display:flex;justify-content:space-between;gap:8px}.mini .name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}")
   o(".mini i{display:block;height:4px;border-radius:2px;margin-top:4px}")
   o(".top small.sh{color:var(--muted);font-weight:400;font-size:12px;margin-left:4px}.top small.tr{color:var(--muted);font-size:11px;margin-left:8px;font-weight:400}.top small.tr.new{color:var(--good);font-weight:600}")
+  o(".st{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;font:700 10px/1 -apple-system,sans-serif;font-style:normal;color:#fff;margin-left:8px;vertical-align:1px;cursor:help}.st.g{background:#23915a}.st.b{background:#3b82f6}.st.r{background:#d64545}")
   o("h3.ch{font-size:15px;margin:26px 0 4px}p.cd{margin:0 0 10px;max-width:900px}")
   o("summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;font-size:19px;font-weight:700;letter-spacing:-.01em;margin:0 0 14px;user-select:none}summary::-webkit-details-marker{display:none}")
   o("summary::before{content:'';width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex:none}details[open]>summary::before{transform:rotate(45deg)}details:not([open])>summary{margin-bottom:0}summary:focus-visible{outline:2px solid var(--p1);outline-offset:4px;border-radius:4px}")
@@ -1412,10 +1413,10 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   }
   o("</div></section>")
 
-  write_model_chart()
+  write_models()
 
   # --- Comparison table ---
-  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached).</p><div class='card tw'><table><thead><tr><th></th>")
+  o("<section><details open><summary>" (nper > 1 ? "Comparison" : "Summary") "</summary><p class='note cd'>The same numbers for each period, side by side. <b>Input</b> is everything sent to the model, which includes the whole conversation again on every call. The lines under it show how much of that input was cheap (read from cache) and how much was expensive (written to cache or not cached). The small colored marks show how each number looks: a green ✓ is healthy, a blue i is worth a look, a red ! needs attention. Hover a mark to see why.</p><div class='card tw'><table><thead><tr><th></th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(P_calls[p]);                                             hrow("API calls", v, "")
@@ -1423,11 +1424,11 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cr[p]) " · " money(P_ccr[p]);                   hrow("Cache read (hit)", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw5[p]);                                        hrow("Cache write, 5 min", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw1h[p]);                                       hrow("Cache write, 1 hour", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw5[p] + P_cw1h[p]) " · " money(P_ccw[p]);      hrow("Cache writes (miss)", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_in[p]) " · " money(P_cin[p]);                   hrow("Not cached (miss)", v, "sub")
-  for (p = 1; p <= nper; p++) v[p] = pct(P_cr[p], P_in[p] + P_cw5[p] + P_cw1h[p] + P_cr[p]);         hrow("Cache hit rate", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_cw5[p] + P_cw1h[p]) " · " money(P_ccw[p]) dot(lvl_lo(sh = pcts(P_cw5[p] + P_cw1h[p], tin_of(p)), 3, 8), sprintf("%.1f%% of input tokens were cache writes. Under 3%% is healthy, over 8%% needs attention.", sh));      hrow("Cache writes (miss)", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = format_tokens(P_in[p]) " · " money(P_cin[p]) dot(lvl_lo(sh = pcts(P_in[p], tin_of(p)), 0.5, 2), sprintf("%.2f%% of input tokens were not cached. Under 0.5%% is healthy, over 2%% needs attention.", sh));                   hrow("Not cached (miss)", v, "sub")
+  for (p = 1; p <= nper; p++) v[p] = pct(P_cr[p], tin_of(p)) dot(lvl_hi(sh = pcts(P_cr[p], tin_of(p)), 95, 90), sprintf("%.1f%% of input tokens were cache reads. 95%% or more is healthy, under 90%% needs attention.", sh));         hrow("Cache hit rate", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = format_tokens(P_out[p]) " · " money(P_cout[p]);                 hrow("Output tokens", v, "")
-  for (p = 1; p <= nper; p++) v[p] = money(P_cost[p]);                                               hrow("Est. API cost", v, "tot")
+  for (p = 1; p <= nper; p++) v[p] = money(P_cost[p]) ((p > 1 && pe[p] <= now && P_cost[p - 1] > 0) ? dot(lvl_lo(sh = (P_cost[p] / P_cost[p - 1] - 1) * 100, 10.0001, 30), sprintf("%+.0f%% vs %s. Flat, or up to 10%%, is fine; up 10%% to 30%% is worth a look; up over 30%% needs attention.", sh, plab[p - 1])) : "");                                               hrow("Est. API cost", v, "tot")
   for (p = 1; p <= nper; p++) v[p] = money(P_nc[p]);                                                 hrow("Cost with no cache", v, "")
   for (ci = 1; ci <= ncat; ci++) {
     cat = cats[ci]
@@ -1461,7 +1462,6 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
   write_cache()
   write_chart()
   write_context()
-  write_models()
   write_top()
 
   # --- Notes ---
@@ -1476,7 +1476,7 @@ function write_html(    p, i, j, n, key, tot, ord, lim, mx, w, maxday, days, nd,
 }
 
 # --- Cache: how much of the input was read from cache, against written or not cached ---
-function write_cache(    p, tin, w, j, kn, kc, kf, kv, nb, bk, i, k, r, rmin, ymin, W, H, L, R, T, B, pw, ph, g, y, x, pts, step, tip, slot) {
+function write_cache(    lo, hi, p, tin, w, j, kn, kc, kf, kv, nb, bk, i, k, r, rmin, ymin, W, H, L, R, T, B, pw, ph, g, y, x, pts, step, tip, slot) {
   split("Cache read (hit) · good|Cache write (miss) · avoid|Not cached · avoid", kn, "|")
   split("var(--k1)|var(--k2)|var(--k4)", kc, "|")
   split("#fff|#1d1c19|#1d1c19", kf, "|")
@@ -1501,17 +1501,26 @@ function write_cache(    p, tin, w, j, kn, kc, kf, kv, nb, bk, i, k, r, rmin, ym
   rmin = 100
   for (i = 1; i <= nb; i++) if (B_in[bk[i]] > 0) { r = B_cr[bk[i]] / B_in[bk[i]] * 100; if (r < rmin) rmin = r }
   if (nb >= 2) {
-    ymin = int((rmin - 1) / 5) * 5
+    ymin = 80                                  # hit rates sit near the top, so start at 80% (lower only if the data does)
+    if (rmin < 80) ymin = int((rmin - 1) / 5) * 5
     if (ymin < 0) ymin = 0
     W = 1100; H = 300; L = 70; R = 24; T = 16; B = 44
     pw = W - L - R; ph = H - T - B; slot = pw / nb
     o("<h3 class='ch'>How well did the cache hold up each " unit_word(bucket_unit) "?</h3>")
-    o("<p class='note cd'>The <b>cache hit rate</b> is the share of tokens that were read from cache. Higher is better. A dip means the stored conversation had gone cold (you were idle for a while, started a new session or cleared the chat), so it had to be stored again at a higher price. The axis starts at " ymin "%, not at zero, so small dips are easy to see.</p>")
+    o("<p class='note cd'>The <b>cache hit rate</b> is the share of tokens that were read from cache. Higher is better. A dip means the stored conversation had gone cold (you were idle for a while, started a new session or cleared the chat), so it had to be stored again at a higher price. The axis starts at " ymin "%, not at zero, so small dips are easy to see. The colors match the marks in the table: green is 95% or more, blue is 90% to 95%, red is under 90%.</p>")
     o("<div class='chartwrap'><svg class='chart' viewBox='0 0 " W " " H "' role='img' aria-label='Cache hit rate per " unit_word(bucket_unit) "'>")
     for (g = 0; g <= 4; g++) {
       y = T + ph - ph * g / 4
       o("<line class='gl' x1='" L "' x2='" (W - R) "' y1='" sprintf("%.1f", y) "' y2='" sprintf("%.1f", y) "'/>")
       o("<text x='" (L - 10) "' y='" sprintf("%.1f", y + 4) "' text-anchor='end'>" sprintf("%g", ymin + (100 - ymin) * g / 4) "%</text>")
+    }
+    # colored bands match the status marks: 95%+ healthy, 90 to 95% worth a look, under 90% needs attention
+    for (g = 1; g <= 3; g++) {
+      lo = (g == 1) ? ymin : (g == 2) ? 90 : 95
+      hi = (g == 1) ? 90 : (g == 2) ? 95 : 100
+      if (lo < ymin) lo = ymin
+      if (hi <= ymin) continue
+      o("<rect x='" L "' width='" pw "' y='" sprintf("%.1f", T + ph - (hi - ymin) / (100 - ymin) * ph) "' height='" sprintf("%.1f", (hi - lo) / (100 - ymin) * ph) "' fill='" ((g == 1) ? "#d64545" : (g == 2) ? "#3b82f6" : "#23915a") "' opacity='.09'/>")
     }
     pts = ""
     for (i = 1; i <= nb; i++) {
@@ -1676,6 +1685,13 @@ function note_call(p, ctx,    b) {
 # "12.3k" style, from format_tokens, for a tokens value
 function ctxfmt(x) { return format_tokens(x) }
 
+# % of a period's calls whose context is at or above bin `from` (bins are CTX_BIN tokens wide)
+function share_over(p, from,    b, run) {
+  run = 0
+  for (b = from; b <= CTX_MAXBIN; b++) run += CT_h[p, b]
+  return (CT_n[p] > 0) ? run / CT_n[p] * 100 : 0
+}
+
 # "250k", "1M" for axis labels
 function kfmt(x) { return (x >= 1000000) ? sprintf("%gM", x / 1000000) : sprintf("%gk", x / 1000) }
 
@@ -1719,7 +1735,7 @@ function line_chart(title, desc, xtitle, ytitle, n, tk,    p, i, W, H, L, R, T, 
   o("</svg></div>")
 }
 
-function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kfg, kname, tot, run, b, lab) {
+function write_context(    sh, p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, ptsA, ptsM, ptsP, slot, tip, step, bins, j, share, lo, hi, kcol, kfg, kname, tot, run, b, lab) {
   o("<section><details open><summary>Context size</summary><div class='card'>")
   o("<p class='note' style='margin:0 0 14px'>Each time Claude answers, it reads the whole conversation so far. The size of that conversation, in tokens, is the <b>context</b>. A bigger context makes every call cost more. This is counted for every API call, not for every message you type, because one message can make Claude call the API many times (for example to use tools). Only your main conversation is counted; helper agents (subagents) get their own row.</p>")
   # per-period table
@@ -1727,7 +1743,7 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   o("</tr></thead><tbody>")
   for (p = 1; p <= nper; p++) v[p] = commas(CT_n[p] + 0);                                                   hrow("Main-thread API calls", v, "")
-  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_sum[p] / CT_n[p]) : "–";                    hrow("Context per call, average", v, "tot")
+  for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_sum[p] / CT_n[p]) dot(lvl_lo(sh = share_over(p, 40), 25, 50), sprintf("%.0f%% of calls had over 200k tokens of context. Under 25%% is healthy, over 50%% needs attention (bigger conversations cost more on every call).", sh)) : "–";                    hrow("Context per call, average", v, "tot")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.5, CTX_BIN)) : "–";  hrow("Median (50th percentile)", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(hist_pct(CT_h, p, CTX_MAXBIN, CT_n[p], 0.95, CTX_BIN)) : "–"; hrow("95th percentile", v, "sub")
   for (p = 1; p <= nper; p++) v[p] = (CT_n[p] > 0) ? ctxfmt(CT_max[p]) : "–";                               hrow("Largest", v, "sub")
@@ -1849,6 +1865,13 @@ function write_context(    p, i, v, k, W, H, L, R, T, B, pw, ph, ymax, g, y, x, 
   o("</div></details></section>")
 }
 
+# Status dot: g = healthy, b = worth a look, r = needs attention. Shape as well as color (check, i, !).
+function dot(l, tip) { return "<i class='st " l "' title='" hesc(tip) "'>" ((l == "g") ? "✓" : (l == "b") ? "i" : "!") "</i>" }
+function lvl_hi(x, g, b) { return (x >= g) ? "g" : (x >= b) ? "b" : "r" }   # higher is better
+function lvl_lo(x, g, b) { return (x < g) ? "g" : (x <= b) ? "b" : "r" }    # lower is better
+function pcts(a, b) { return (b > 0) ? a / b * 100 : 0 }
+function tin_of(p) { return P_in[p] + P_cw5[p] + P_cw1h[p] + P_cr[p] }
+
 # --- Cost by model: one bar per period, one segment per model ---
 function write_model_chart(    n, ord, i, p, j, mk, mc, fg, nm, names, c, other, w, tot, cost) {
   n = sort_desc(mod_cost, ord)
@@ -1856,7 +1879,7 @@ function write_model_chart(    n, ord, i, p, j, mk, mc, fg, nm, names, c, other,
   split("#5b6cf0|#e08a2e|#1f9e8a|#c2527a|#8b5cf6|#3b82f6|#d4a72c|#b8b4aa", mc, "|")
   split("#fff|#1d1c19|#fff|#fff|#fff|#fff|#1d1c19|#1d1c19", fg, "|")
   nm = (n > 7) ? 7 : n
-  o("<section><details open><summary>Cost by model</summary><p class='note cd'>Which models your money went to. Each bar is 100% of that period's cost. A pricier model (such as Opus) costs more for the same work than a cheaper one (such as Sonnet or Haiku), so a shift between colors from one period to the next shows a change in which model you lean on.</p><div class='card'><div class='keys'>")
+  o("<div class='card' style='margin-bottom:16px'><div class='keys'>")
   for (i = 1; i <= nm; i++) o("<span><i class='chip' style='background:" mc[i] "'></i>" hesc(ord[i]) "</span>")
   if (n > nm) o("<span><i class='chip' style='background:" mc[8] "'></i>Other (" (n - nm) ")</span>")
   o("</div>")
@@ -1876,19 +1899,21 @@ function write_model_chart(    n, ord, i, p, j, mk, mc, fg, nm, names, c, other,
     }
     o("</div><span class='v'>" money(P_cost[p]) "</span></div>")
   }
-  o("</div></details></section>")
+  o("</div>")
 }
 
 # --- Models: one row per model, one column per period ---
 function write_models(    n, ord, i, p, mk, c) {
   n = sort_desc(mod_cost, ord)
-  o("<section><details open><summary>Models</summary><p class='note cd'>What each model you used cost, and how many tokens it handled. A * means no price was found, so a default price was used.</p><div class='card tw'><table><thead><tr><th>Model</th>")
+  o("<section><details open><summary>Models</summary><p class='note cd'>Which models your money went to. Each bar is 100% of that period's cost, so a shift between colors from one period to the next shows a change in which model you lean on. A pricier model (such as Opus) costs more for the same work than a cheaper one (such as Sonnet or Haiku). The table below gives the dollars and calls for each model. A red ! marks a model with no known price, which was costed at a default price.</p>")
+  write_model_chart()
+  o("<div class='card tw'><table><thead><tr><th>Model</th>")
   for (p = 1; p <= nper; p++) o("<th><i class='chip' style='background:" pcolor(p) "'></i>" hesc(plab[p]) "</th>")
   if (nper > 1) o("<th>Total</th>")
   o("</tr></thead><tbody>")
   for (i = 1; i <= n; i++) {
     mk = ord[i]
-    o("<tr><td>" hesc(mk) ((mk in unpriced) ? " *" : "") "</td>")
+    o("<tr><td>" hesc(mk) ((mk in unpriced) ? dot("r", "No price found for this model, so it was costed at the default Sonnet rates") : "") "</td>")
     for (p = 1; p <= nper; p++) {
       c = PM_cost[p, mk] + 0
       if (PM_calls[p, mk] + 0 == 0) o("<td><small>–</small></td>")
@@ -1901,7 +1926,6 @@ function write_models(    n, ord, i, p, mk, c) {
   for (p = 1; p <= nper; p++) o("<td>" money(P_cost[p]) "<small>" commas(P_calls[p]) " calls</small></td>")
   if (nper > 1) o("<td>" money(total_cost) "<small>" commas(uniq_u) " calls</small></td>")
   o("</tr></tbody></table></div>")
-  if (nun > 0) o("<p class='note'>* No price found; costed at default Sonnet rates.</p>")
   o("</details></section>")
 }
 
